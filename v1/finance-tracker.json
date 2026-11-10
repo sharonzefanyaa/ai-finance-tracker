@@ -1,0 +1,4030 @@
+{
+  "name": "finance-tracker",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(SUM(amount), 0) AS total_spending\nFROM transactions\nWHERE category = '{{ $('Check Transaction Type').item.json.category }}'\nAND created_at >= date_trunc('month', CURRENT_DATE);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3968,
+        96
+      ],
+      "id": "7f73c445-1203-4c18-a506-eb68e68281d7",
+      "name": "Get Monthly Spending",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT limit_amount\nFROM budgets\nWHERE category = '{{ $('Check Transaction Type').item.json.category }}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4192,
+        96
+      ],
+      "id": "1264712a-c2e5-4cd6-ba1c-7cf6d2b3da5d",
+      "name": "Get Budget Limit",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e4c3fe9f-1f63-4fa1-9a7b-b25ab84daec3",
+              "name": "response",
+              "value": "={{ $('Budget Tracking').item.json.percentage >= 100 ? '🚨 Pengeluaran dicatat, budget terlampaui!' : '⚠️ Pengeluaran dicatat, budget hampir habis' }}\n\n🧾 {{ $('Extract Transaction Data').item.json.category }} · Rp{{ Number($('Extract Transaction Data').item.json.amount).toLocaleString('id-ID') }}\n\n📊 Budget {{ $('Extract Transaction Data').item.json.category }}\n{{ $('Budget Tracking').item.json.bar }} {{ $('Budget Tracking').item.json.percentage }}%\nRp{{ $('Budget Tracking').item.json.formatted_spending }} dari Rp{{ $('Budget Tracking').item.json.formatted_limit }}\n{{ $('Budget Tracking').item.json.is_over ? 'Melebihi' : 'Sisa' }} Rp{{ $('Budget Tracking').item.json.formatted_remaining }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4992,
+        0
+      ],
+      "id": "b554d158-f51c-4ade-b6ef-9f764573637e",
+      "name": "Budget Warning Response"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an AI financial transaction parser.\nExtract structured financial transaction data from natural language input.\nReturn ONLY valid JSON.\nDo not include markdown, explanations, or additional text.\n\nSupported transaction types:\n* expenses\n* income\n* transfer\n* savings\n\nExtract the following fields:\n* type\n* amount\n* category\n* merchant\n* location\n* from_account\n* to_account\n* savings_name\n* date\n* notes\n\nRules:\n* Convert shorthand:\n  * rb = thousand\n  * jt = million\n* Normalize all amounts into integer Rupiah.\n* Detect multiple transactions if present.\n* Infer category intelligently.\n* Use null for missing information.\n* Never invent values.\n\nTransaction Type Rules:\n\nExpense:\n* from_account = payment source.\n* to_account = null.\n* category should represent spending category.\n\nIncome:\n* to_account = account receiving the income.\n* from_account = null.\n* category should represent income source.\n\nTransfer:\n* from_account = source account.\n* to_account = destination account.\n* category = null.\n\nSavings:\n* from_account = source account if mentioned.\n* to_account = null.\n* savings_name = savings goal if explicitly mentioned.\n* category = null.\n\nDate Rules:\n* Return date only when explicitly provided.\n* If date is missing, relative, incomplete, or ambiguous, return null.\n* Never guess dates.\n* Format valid dates as YYYY-MM-DD HH:mm:ss.\n\nIncome Category Rules:\n* If the income source is explicitly mentioned, infer the appropriate category.\n  Examples:\n  * gaji → salary\n  * bonus → bonus\n  * freelance → freelance\n  * komisi → commission\n  * dividen → dividend\n  * bunga deposito → interest\n  * hadiah → gift\n* If the income source cannot be determined, default to \"salary\".\n\nOutput Format:\n{\n\"transactions\": [\n{\n\"type\": \"expenses|income|transfer|savings\",\n\"amount\": 0,\n\"category\": null,\n\"merchant\": null,\n\"location\": null,\n\"from_account\": null,\n\"to_account\": null,\n\"savings_name\": null,\n\"date\": null,\n\"notes\": null\n}\n]\n}\n"
+            },
+            {
+              "content": "={{ $('Data Input').item.json.message }}"
+            },
+            {
+              "content": "=Financial Data:\n{{ JSON.stringify($json) }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        1696,
+        800
+      ],
+      "id": "8a3b0163-d234-4866-9fe3-d42be7781ee4",
+      "name": "Parse Transaction",
+      "credentials": {
+        "openAiApi": {
+          "id": "Pve25KqxElFFMtHm",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f900d5a7-55a0-4bb0-b472-3dfedc226e98",
+              "name": "response",
+              "value": "=✅ Pengeluaran dicatat\n\n🧾 {{ $('Extract Transaction Data').item.json.category }} · Rp{{ Number($('Extract Transaction Data').item.json.amount).toLocaleString('id-ID') }}\n\n📊 Budget {{ $('Extract Transaction Data').item.json.category }}\n{{ $('Budget Tracking').item.json.bar }} {{ $('Budget Tracking').item.json.percentage }}%\nRp{{ $('Budget Tracking').item.json.formatted_spending }} dari Rp{{ $('Budget Tracking').item.json.formatted_limit }}\nSisa Rp{{ $('Budget Tracking').item.json.formatted_remaining }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4992,
+        192
+      ],
+      "id": "26b01cd8-dd07-4345-94a0-e64d814c088a",
+      "name": "Budget Safe Response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "eccc2f60-cef8-43b3-8c60-91f5dba8b10a",
+              "leftValue": "={{ $json.percentage }}",
+              "rightValue": 80,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4704,
+        96
+      ],
+      "id": "316ab969-65c8-4a67-a00e-6677fe86519e",
+      "name": "Evaluate Budget"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(SUM(amount), 0) AS total_income\nFROM transactions\nWHERE transaction_type = 'income'\nAND created_at >= date_trunc('month', CURRENT_DATE);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        384
+      ],
+      "id": "92ee6783-50ff-46dc-bdda-32e1ff3a9254",
+      "name": "Calculate Monthly Income",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const totalIncomeRaw =\n  $node[\"Calculate Monthly Income\"].json.total_income;\n\nconst totalIncome =\n  Number(totalIncomeRaw || 0);\n\nconst amount =\n  Number(\n    $node[\"Extract Transaction Data\"].json.amount || 0\n  );\n\nconst category =\n  $node[\"Extract Transaction Data\"].json.category;\n\nconst formatRupiah = (num) =>\n  new Intl.NumberFormat('id-ID').format(num);\n\nreturn [\n  {\n    json: {\n      category,\n      amount,\n      total_income: totalIncome,\n\n      formatted_amount:\n        formatRupiah(amount),\n\n      formatted_total_income:\n        formatRupiah(totalIncome)\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4704,
+        384
+      ],
+      "id": "66e4100e-d07f-49a6-9866-e54262d77dd3",
+      "name": "Calculate Income Analytics"
+    },
+    {
+      "parameters": {
+        "jsCode": "const spendingRaw =\n  $node[\"Get Monthly Spending\"].json.total_spending;\n\nconst limitRaw =\n  $node[\"Get Budget Limit\"].json.limit_amount;\n\nconst category =\n  $node[\"Parse Transaction\"].json.category;\n\nconst spending = Number(spendingRaw || 0);\nconst limit = Number(limitRaw || 0);\n\nconst percentage =\n  limit > 0\n    ? Number(((spending / limit) * 100).toFixed(1))\n    : 0;\n\nconst formatRupiah = (num) =>\n  new Intl.NumberFormat('id-ID').format(num);\n\nconst remaining = limit - spending;\nconst filled = Math.min(10, Math.max(0, Math.round(percentage / 10)));\n\nreturn [\n  {\n    json: {\n      category,\n      spending,\n      limit,\n      percentage,\n      formatted_spending: formatRupiah(spending),\n      formatted_limit: formatRupiah(limit),\n      formatted_remaining: formatRupiah(Math.abs(remaining)),\n      is_over: remaining < 0,\n      bar: '▓'.repeat(filled) + '░'.repeat(10 - filled)\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4416,
+        96
+      ],
+      "id": "5890fd5b-6e2b-4742-b271-6a0a9287b4e1",
+      "name": "Budget Tracking"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9c1e8faa-cdf8-4619-897e-a43701666bac",
+              "name": "type",
+              "value": "={{ JSON.parse($json.output[0].content[0].text).transactions[0].type }}",
+              "type": "string"
+            },
+            {
+              "id": "d76ddc0f-9235-42db-aa31-ea38e2c8b9e0",
+              "name": "amount",
+              "value": "={{ JSON.parse($json.output[0].content[0].text).transactions[0].amount }}",
+              "type": "string"
+            },
+            {
+              "id": "9bf33fa1-1395-40a5-ab71-6af53d9320ce",
+              "name": "category",
+              "value": "={{ JSON.parse($json.output[0].content[0].text).transactions[0].category }}",
+              "type": "string"
+            },
+            {
+              "id": "dcbe4f8c-2ece-493e-be97-015e432aeaff",
+              "name": "merchant",
+              "value": "={{ JSON.parse($json.output[0].content[0].text).transactions[0].merchant }}",
+              "type": "string"
+            },
+            {
+              "id": "38ed63ff-f062-444c-84b8-0de1e6b479c0",
+              "name": "location",
+              "value": "={{ JSON.parse($json.output[0].content[0].text).transactions[0].location }}",
+              "type": "string"
+            },
+            {
+              "id": "76010b6e-6161-451f-9cab-9cc5b5919d73",
+              "name": "from_account",
+              "value": "={{ JSON.parse($json.output[0].content[0].text).transactions[0].from_account }}",
+              "type": "string"
+            },
+            {
+              "id": "c2033749-689b-42bf-aca9-6b6255461e9e",
+              "name": "=to_account",
+              "value": "={{ JSON.parse($json.output[0].content[0].text).transactions[0].to_account }}",
+              "type": "string"
+            },
+            {
+              "id": "dc724cba-d43a-4dbc-a9c0-35cf9f02feb8",
+              "name": "savings_name",
+              "value": "={{ JSON.parse($json.output[0].content[0].text).transactions[0].savings_name }}",
+              "type": "string"
+            },
+            {
+              "id": "584c0a7e-0386-41f8-a5bf-3c95cc031201",
+              "name": "notes",
+              "value": "={{ JSON.parse($json.output[0].content[0].text).transactions[0].notes }}",
+              "type": "string"
+            },
+            {
+              "id": "dd9893eb-a899-4ff8-9aef-b01f9acb264b",
+              "name": "transaction_date",
+              "value": "={{ JSON.parse($json.output[0].content[0].text).transactions[0].date }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2048,
+        800
+      ],
+      "id": "5e1a97c6-3388-4b73-991c-2331b7ad2fda",
+      "name": "Extract Transaction Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(SUM(current_amount), 0) AS total_savings\nFROM savings\nWHERE created_at >= date_trunc('month', CURRENT_DATE);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        576
+      ],
+      "id": "96d44361-d8c0-4a08-8aae-c3f56490ad39",
+      "name": "Calculate Monthly Savings",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const totalSavingsRaw =\n  $node[\"Calculate Monthly Savings\"].json.total_savings;\n\nconst totalSavings =\n  Number(totalSavingsRaw || 0);\n\nconst amount =\n  Number(\n    $node[\"Extract Transaction Data\"].json.amount || 0\n  );\n\nconst formatRupiah = (num) =>\n  new Intl.NumberFormat('id-ID').format(num);\n\nreturn [\n  {\n    json: {\n      amount,\n      total_savings: totalSavings,\n\n      formatted_amount:\n        formatRupiah(amount),\n\n      formatted_total_savings:\n        formatRupiah(totalSavings)\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4704,
+        576
+      ],
+      "id": "00098a71-5e5b-4a1c-9029-287616538eb0",
+      "name": "Calculate Savings Analytics"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT json_build_object(\n    'accounts', (\n        SELECT json_agg(a)\n        FROM accounts a\n    ),\n    'budgets', (\n        SELECT json_agg(b)\n        FROM budgets b\n    ),\n    'savings', (\n        SELECT json_agg(s)\n        FROM savings s\n    ),\n    'transactions', (\n        SELECT json_agg(t)\n        FROM transactions t\n    )\n) AS finance_data;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4432,
+        4336
+      ],
+      "id": "9424df4a-016b-49d8-b3c6-88c4698f3a7c",
+      "name": "Get Total Income",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ALLOWED = ['record_transaction', 'financial_setup', 'financial_insight'];\n\n// 1. Read the answer text from the OpenAI output structure, without fixed indexes\nfunction readText(data) {\n  const out = Array.isArray(data.output) ? data.output : [];\n  for (const item of out) {\n    for (const c of (item.content || [])) {\n      if (typeof c.text === 'string') return c.text;\n    }\n  }\n  return '';\n}\n\n// 2. Strip markdown fences if the model added them\nlet raw = readText($json).trim();\nraw = raw.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n\n// 3. Parse safely: on failure, treat as no intent\nlet intents = [];\ntry {\n  const parsed = JSON.parse(raw);\n  const list = Array.isArray(parsed) ? parsed : parsed.intents;\n  if (Array.isArray(list)) intents = list;\n} catch (e) {\n  intents = [];\n}\n\n// 4. Keep only known intents, drop duplicates\nintents = [...new Set(intents.filter(i => ALLOWED.includes(i)))];\n\nreturn [{ json: { intents, raw_output: raw } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        2960
+      ],
+      "id": "921dbff1-d190-4644-896e-760753f4b631",
+      "name": "Extract Intents"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "record_transaction",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "68ccfd0f-5b0c-4df2-9cc8-886e426a7d70"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Transaction"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ec4bf58d-e062-4cd6-ab2a-2b31ba6d0574",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "financial_setup",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Setup"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "929823d2-1f7d-4aa3-829d-02c7e7306382",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "financial_insight",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Insights"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "9abb4de4-b023-4657-bf40-62710fb5ee2e",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "unmatched",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Unmatched"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1248,
+        2944
+      ],
+      "id": "8b677569-0125-4a7d-ad45-3c00043c4a7d",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "const intents = $json.intents || [];\n\nif (intents.length === 0) {\n  return [\n    {\n      json: {\n        intent: \"unmatched\"\n      }\n    }\n  ];\n}\n\nreturn intents.map(intent => ({\n  json: {\n    intent: intent\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        2960
+      ],
+      "id": "92aeeef9-6ea8-4764-9018-649bb59f96ec",
+      "name": "Split Out Intents"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You classify messages for a personal finance assistant on Telegram.\nUsers write in Indonesian, English, or both, in casual style (rb = ribu, jt = juta, k = thousand).\n\nReturn ONLY JSON in this shape: {\"intents\": [...]}\nAllowed values: record_transaction, financial_setup, financial_insight.\nJudge each clause of the message separately. List each intent once, in order of appearance.\nIf no clause is about the user's finances, return {\"intents\": []}.\n\nCore principle:\n- financial_setup changes the definition of a budget, account, or savings goal: create it, rename it, change its limit, target, balance, type or deadline, or delete it.\n- record_transaction records money that actually moved: spent, received, transferred, or put into savings.\n- financial_insight asks for information or advice and changes nothing.\n\nDecide per clause, in this order:\n\n1. financial_insight\nSignals: a question mark; berapa, apa, gimana, bagaimana, kapan, mana; tampilkan, lihat, show, list, get; ringkasan, summary, laporan, analisis, report, trend; sisa, remaining, left; saran, rekomendasi, sebaiknya, advice; aman ga, cukup ga; kalau, seandainya, what if (hypothetical).\nA question or a hypothetical is always insight, even if it contains an amount or the word budget.\n\n2. financial_setup\nNeeds BOTH:\n(a) a managed object: budget, limit, kategori, akun, account, rekening, wallet, dompet, savings goal, tabungan (as a goal), goal, target, etc.\n(b) a management verb or setup field: buat, bikin, create, add, tambah, tambahin, kurangi, naikkan, turunkan, increase, add, decrease, deduct, set, atur, ubah, ganti, update, change, edit, rename, hapus, delete, remove; or the fields target, limit, deadline, saldo awal, tipe akun, nama akun, etc.\nAdjusting the stored balance of a named account (\"tambah saldo\", \"kurangi saldo\", \"set saldo\") is setup.\n\n3. record_transaction\nMoney that moved. Needs an amount and one of:\n- spending: beli, bayar, makan, minum, jajan, belanja, isi, langganan, ongkos, bought, paid, spent, purchase, etc\n- income: gaji, bonus, komisi, freelance, dapat, terima, masuk, income, salary, received, etc\n- transfer: transfer, kirim, pindah, top up, send, move, etc\n- saving: tabung, nabung, menabung, setor, save, deposit, etc\nA clause that is only an item and an amount, with no managed object, is spending.\n\nTie-breakers:\n- The object decides, not the verb. \"tambah\" with a budget, account, or savings goal is setup. \"tabung\", \"nabung\", and \"setor\" with an amount are transactions, even if a savings goal name is mentioned.\n- \"buat\" or \"bikin\" with savings, akun/account, or budget is setup (creating something). Saving money into a goal is never setup.\n- A clause that starts with a managed object word (budget, akun, savings, target) followed by a name and an amount is setup, even without a verb.\n- The words target, limit, deadline, saldo awal, and tipe always make a clause setup.\n\n## Not a finance request\nExamples that return {\"intents\": []}:\n- halo\n- makasih ya\n- cuaca hari ini gimana?\n\n## Examples\n\nInput: makan sushi 120rb\nOutput: {\"intents\": [\"record_transaction\"]}\n\nInput: lunch 50k\nOutput: {\"intents\": [\"record_transaction\"]}\n\nInput: tabung 2jt\nOutput: {\"intents\": [\"record_transaction\"]}\n\nInput: tambah budget makan 500rb\nOutput: {\"intents\": [\"financial_setup\"]}\n\nInput: pengeluaran bulan ini berapa?\nOutput: {\"intents\": [\"financial_insight\"]}\n\nInput: get all data\nOutput: {\"intents\": [\"financial_insight\"]}\n\nInput: halo\nOutput: {\"intents\": []}\n\nInput: gaji masuk 10jt terus tambahin budget makan 500rb\nOutput: {\"intents\": [\"record_transaction\", \"financial_setup\"]}\n\nInput: buat savings liburan target 20jt, terus tabung 1jt\nOutput: {\"intents\": [\"financial_setup\", \"record_transaction\"]}\n\nInput: beli coffee 45k, sisa budget makan berapa?\nOutput: {\"intents\": [\"record_transaction\", \"financial_insight\"]}"
+            },
+            {
+              "content": "={{ $json.message }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        2960
+      ],
+      "id": "3b17f0ef-5236-4625-bbf6-ab56a2cf1890",
+      "name": "AI Intent Router",
+      "credentials": {
+        "openAiApi": {
+          "id": "Pve25KqxElFFMtHm",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "38c563de-1c94-4d06-9340-30fa1b345bcc",
+              "name": "=response",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5216,
+        1232
+      ],
+      "id": "c009aa18-7a9c-4959-b4d8-8666275128b2",
+      "name": "Budget Update Response"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "00b16f9b-b62a-442b-bf28-cdabaa3b4cfb",
+              "name": "response",
+              "value": "=✅ Pemasukan dicatat\n\n💰 Rp{{ $json.formatted_amount }}\n📈 Total pemasukan bulan ini: Rp{{ $json.formatted_total_income }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4992,
+        384
+      ],
+      "id": "8ffc17f7-7533-49c3-86a9-fa9418da801a",
+      "name": "Income Response"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b01b4f92-d819-41bc-943b-e18fc1a96f4e",
+              "name": "response",
+              "value": "=✅ Tabungan dicatat\n\n🏦 + Rp{{ $json.formatted_amount }}\n📊 Total tabungan bulan ini: Rp{{ $json.formatted_total_savings }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4992,
+        576
+      ],
+      "id": "9c298930-73db-4c2b-824e-34a1533ecf60",
+      "name": "Savings Response"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6952ad86-dc7c-4631-831e-166c4d50429a",
+              "name": "message",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        2960
+      ],
+      "id": "a23e569c-6889-48b8-b438-7c9e84ee4c82",
+      "name": "Data Input"
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "userIds": "YOUR_TELEGRAM_USER_ID"
+        }
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        2960
+      ],
+      "id": "c472d396-fff2-4185-aa49-53638ad3a3e4",
+      "name": "Telegram Trigger",
+      "webhookId": "402feeb8-1126-4c0c-a037-0eb9b1f73b2f",
+      "credentials": {
+        "telegramApi": {
+          "id": "VNMrbMFxDGMu3qgU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "={{ $json.response }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        5664,
+        752
+      ],
+      "id": "4335baf4-c075-4191-8b3c-5fdc1bb8e25f",
+      "name": "Send a text message",
+      "webhookId": "e314f684-8118-4972-b2a5-024de7e5dae8",
+      "credentials": {
+        "telegramApi": {
+          "id": "VNMrbMFxDGMu3qgU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "=You are a smart personal finance assistant.\n\nUser Message:\n{{ $('Data Input').item.json.message }}\n\nAvailable Financial Data:\n{{ JSON.stringify($json.finance_data) }}\n\nYour task is to answer the user's question using only the available financial data.\n\nGuidelines:\n* Answer in Bahasa Indonesia.\n* Focus only on the information relevant to the user's question.\n* Do not mention unrelated financial metrics unless they help answer the question.\n* Format all monetary values in Indonesian Rupiah (e.g., Rp1.250.000).\n* Keep responses concise, clear, and conversational.\n* Maximum 150 words.\n* If the available data is insufficient to answer the question, clearly explain what information is missing.\n* Avoid generic disclaimers or unnecessary explanations.\n* Include actionable recommendations only when they add value to the response.\n* Do not invent, estimate, or assume any financial figures that are not provided.\n* Write the names of budgets, accounts, and savings goals exactly as they appear in the data. Never translate, rename, or change their capitalization.\n* For each savings goal, use this format: name: Rp{current_amount} dari target Rp{target_amount} ({percent}%), deadline {date, or \"belum ditentukan\"}. Do not repeat the target amount twice.\n\n* Use plain text only: no Markdown symbols such as ** or ##. Use short lines, one emoji per section header, and a blank line between sections.\n\nCalculation Rules:\n* Remaining Money = Total Income - Total Budget Allocation - Total Savings\n* Use this formula whenever the user asks about:\n  * remaining money\n  * available money\n  * money left\n  * unused money\n  * \"berapa uang sisaku\"\n  * similar questions about available funds\n\nResponse Style:\n* Use Telegram-friendly formatting with emojis only if necessary.\n* Prioritize readability.\n* Present lists or summaries using bullet points when helpful.\n* Sound like a helpful personal finance assistant, not a financial report.\n\nFinancial Advisor Recommendation:\n* Always end your response with one short financial advisor recommendation.\n* Base the recommendation only on the available financial data.\n* Make it practical, specific, and actionable.\n* Do not invent or assume any financial information.\n* Keep it under 25 words.\n* Closing Example: \n💡 Rekomendasi: Pertimbangkan menyisihkan sebagian sisa dana sebagai dana darurat atau investasi agar kondisi keuangan Anda semakin sehat.\n\nOutput only the final response. Do not explain your reasoning."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        4656,
+        4336
+      ],
+      "id": "a71109ee-6809-43a4-bca4-95c063684d63",
+      "name": "Generate Analytics",
+      "credentials": {
+        "openAiApi": {
+          "id": "Pve25KqxElFFMtHm",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2ea5eb92-2f28-46b7-b309-55ff62891857",
+              "name": "response",
+              "value": "={{ $json.output[0].content[0].text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5008,
+        4336
+      ],
+      "id": "1b159d97-f598-4c23-a914-1f27f0acc7ad",
+      "name": "Financial Insight Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "const setupItems = $(\"Check Validation (B)\")\n  .all()\n  .filter(i => i.json.valid_status === \"valid\");\nconst rows = $(\"Merge (B)\").all().map(i => i.json);\n\nconst rp = (n) => \"Rp\" + new Intl.NumberFormat(\"id-ID\").format(Number(n ?? 0));\nconst same = (a, b) => a != null && b != null && String(a).toLowerCase() === String(b).toLowerCase();\n\nconst out = [];\nfor (const item of setupItems) {\n  const data = item.json;\n  const action = data.action;\n\n  // cocokkan lewat nama (bukan urutan), supaya item yang ditolak tidak menggeser yang lain\n  const b = rows.find(r => same(r.old_category ?? r.category, data.name) || same(r.category, data.name));\n  if (!b) continue; // ditolak validasi: node warning sudah membalas\n\n  const lines = [];\n\n  if (action === \"create\") {\n    lines.push(\"✅ Budget dibuat\", \"\");\n    lines.push(`📂 Category: ${b.category}`);\n    lines.push(`💰 Limit: ${rp(b.limit_amount)}`);\n\n  } else if (action === \"increase\" || action === \"decrease\") {\n    const up = action === \"increase\";\n    const delta = Number(data.amount ?? 0);\n    const newLimit = Number(b.limit_amount);\n    const oldLimit = up ? newLimit - delta : newLimit + delta;\n\n    lines.push(up ? \"✅ Budget dinaikkan\" : \"✅ Budget diturunkan\", \"\");\n    lines.push(`📂 Category: ${b.category}`);\n    lines.push(`💰 Limit: ${rp(oldLimit)} ➜ ${rp(newLimit)} (${up ? \"+\" : \"-\"}${rp(delta)})`);\n\n  } else if (action === \"update\") {\n    const oldName = b.old_category ?? data.name;\n    const oldLimit = Number(b.old_limit_amount ?? b.limit_amount);\n    const newLimit = Number(b.limit_amount);\n    const nameChanged = oldName !== b.category;\n    const limitChanged = oldLimit !== newLimit;\n\n    // perubahan relatif (naikkan/kurangi) yang dilipat ke update ini\n    const delta = Number(data.amount_delta ?? 0);\n    const showDelta = delta !== 0 && data.new_amount == null;\n    const deltaText = showDelta ? ` (${delta > 0 ? \"+\" : \"-\"}${rp(Math.abs(delta))})` : \"\";\n\n    lines.push(\"✅ Budget diperbarui\", \"\");\n    lines.push(`📂 Category: ${nameChanged ? `${oldName} ➜ ${b.category}` : b.category}`);\n    lines.push(`💰 Limit: ${limitChanged ? `${rp(oldLimit)} ➜ ${rp(newLimit)}${deltaText}` : rp(newLimit)}`);\n    if (!nameChanged && !limitChanged) {\n      lines.push(\"\", \"ℹ️ Datanya sama dengan sebelumnya, tidak ada yang berubah.\");\n    }\n\n  } else if (action === \"delete\") {\n    lines.push(\"🗑️ Budget dihapus\", \"\");\n    lines.push(`📂 Category: ${b.category}`);\n    lines.push(`💰 Limit terakhir: ${rp(b.limit_amount)}`);\n\n  } else {\n    lines.push(\"✅ Selesai\");\n  }\n\n  out.push({ json: { action, message: lines.join(\"\\n\") } });\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4928,
+        1232
+      ],
+      "id": "3a5a8668-9e80-4942-8c25-8fefee5873a3",
+      "name": "Budget Formatter"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "3cbe752f-d335-40a7-acae-7c3f9bbbc536",
+                    "leftValue": "={{ $json.transaction_type }}",
+                    "rightValue": "expenses",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "EXPENSES"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "59531973-46ea-4c65-a203-c38c3aa696f6",
+                    "leftValue": "={{ $json.transaction_type }}",
+                    "rightValue": "income",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "INCOME"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ba2da0f5-7e26-4d09-a863-e5a18f0f9d14",
+                    "leftValue": "={{ $json.transaction_type }}",
+                    "rightValue": "savings",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SAVINGS"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7fdbc1d9-994e-4ae3-adfb-d2734204dacc",
+                    "leftValue": "={{ $json.transaction_type }}",
+                    "rightValue": "transfer",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "TRANSFER"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        3520,
+        448
+      ],
+      "id": "e52fd23b-a328-457e-a2d9-37d6dd0c208f",
+      "name": "Check Transaction Type"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\nCASE\n    WHEN '{{ $json.type }}' = 'expenses'\n         AND NOT EXISTS (\n             SELECT 1\n             FROM budgets\n             WHERE LOWER(category)=LOWER('{{ $json.category }}')\n         )\n    THEN 'invalid_budget'\n\n    WHEN '{{ $json.type }}' IN ('expenses','transfer','savings')\n         AND '{{ $json.from_account }}' IS NOT NULL\n         AND NOT EXISTS (\n             SELECT 1\n             FROM accounts\n             WHERE LOWER(account_name)=LOWER('{{ $json.from_account }}')\n         )\n    THEN 'invalid_from_account'\n\n    WHEN '{{ $json.type }}' IN ('income','transfer')\n         AND '{{ $json.to_account }}' IS NOT NULL\n         AND NOT EXISTS (\n             SELECT 1\n             FROM accounts\n             WHERE LOWER(account_name)=LOWER('{{ $json.to_account }}')\n         )\n    THEN 'invalid_to_account'\n\n    WHEN '{{ $json.type }}' = 'savings'\n         AND '{{ $json.savings_name }}' IS NOT NULL\n         AND NOT EXISTS (\n             SELECT 1\n             FROM savings\n             WHERE LOWER(savings_name)=LOWER('{{ $json.savings_name }}')\n         )\n    THEN 'invalid_savings'\n    ELSE 'valid'\n\nEND AS status, \n  \n'{{ $json.category }}' AS category,\n'{{ $json.from_account }}' AS from_account,\n'{{ $json.to_account }}' AS to_account,\n'{{ $json.savings_name }}' AS savings_name;;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2560,
+        800
+      ],
+      "id": "645e47ed-aafd-49a1-9e47-519bbbc0dfd8",
+      "name": "Check Category Status",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "valid",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "da8c153e-04eb-4aa1-83fb-0b8aee29ca96"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "VALID"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "cfaeae59-2916-4e0f-8869-dc6f9b7f8921",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "invalid_budget",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "INVALID BUDGET"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "bbef739d-2959-434b-bbb3-29c75220ffee",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "invalid_from_account",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "INVALID FROM"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "a0f5696d-fd7a-4b5d-b03f-393c20fdbe79",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "invalid_to_account",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "INVALID TO"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "75d08bff-6352-46fc-ba8a-2a7a23d34de3",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "invalid_savings",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "INVALID SAVINGS"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2848,
+        752
+      ],
+      "id": "e0256afc-cc69-43fb-8969-02c3048b5d05",
+      "name": "Validate Transaction Status"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "transactions",
+          "mode": "list",
+          "cachedResultName": "transactions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "amount": "={{ $('Extract Transaction Data').item.json.amount }}",
+            "from_account_id": "={{ $json.from_account_id }}",
+            "to_account_id": "={{ $json.to_account_id }}",
+            "transaction_type": "={{ $('Extract Transaction Data').item.json.type }}",
+            "category": "={{ $('Extract Transaction Data').item.json.category }}",
+            "merchant": "={{ $('Extract Transaction Data').item.json.merchant }}",
+            "location": "={{ $('Extract Transaction Data').item.json.location }}",
+            "notes": "={{ $('Extract Transaction Data').item.json.notes }}",
+            "transaction_date": "={{ $('Extract Transaction Data').item.json.transaction_date }}",
+            "savings_id": "={{ $json.savings_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "transaction_id",
+              "displayName": "transaction_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "transaction_type",
+              "displayName": "transaction_type",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "merchant",
+              "displayName": "merchant",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "location",
+              "displayName": "location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "from_account_id",
+              "displayName": "from_account_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "to_account_id",
+              "displayName": "to_account_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "savings_id",
+              "displayName": "savings_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "transaction_date",
+              "displayName": "transaction_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3296,
+        480
+      ],
+      "id": "efd90276-54b1-4cad-9adb-f5d4d91e113c",
+      "name": "Insert rows in Transactions",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=⚠️ Kategori \"{{ $('Validate Transaction Status').item.json.category }}\" tidak ditemukan dalam budget Anda.\n\nAvailable categories:\n{{ $json.categories }}\n\nSilahkan:\n• Buat kategori baru beserta limit budgetnya, atau\n• Tentukan kategori yang tersedia yang paling sesuai untuk transaksi ini.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3520,
+        704
+      ],
+      "id": "0e8df5a0-7351-4465-b528-8321a5d518c1",
+      "name": "Invalid Budget Warning",
+      "webhookId": "455ad715-2590-4d69-a84a-ce9ab61df963",
+      "credentials": {
+        "telegramApi": {
+          "id": "VNMrbMFxDGMu3qgU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "=⚠️ Transaksi tidak dapat dicatat karena informasi akun belum lengkap atau tidak valid.\n\n📝 Tipe transaksi: {{ $('Extract Transaction Data').item.json.type }}\n💸 Akun sumber: {{ $('Validate Transaction Status').item.json.from_account || '-' }}\n💰 Akun tujuan: {{ $('Validate Transaction Status').item.json.to_account || '-' }}\n\nKetentuan:\n• Pengeluaran (Expense) & Tabungan (Savings) → akun sumber wajib diisi\n• Pemasukan (Income) → akun tujuan wajib diisi\n• Transfer → akun sumber dan akun tujuan wajib diisi\n\nPastikan juga nama akun sudah terdaftar dan sesuai dengan daftar akun yang tersedia.\n\nAkun yang tersedia:\n{{ $json.categories }}\n\nContoh:\n• makan sushi 100rb pakai OVO\n• gaji masuk 10jt ke BCA\n• transfer BCA ke OVO 500rb\n• tabung emergency fund 1jt dari BCA",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3520,
+        896
+      ],
+      "id": "9eb63657-f07c-4d82-9f30-bcc03c3153f8",
+      "name": "Invalid Account Warning",
+      "webhookId": "e9926eac-fbe4-44f6-a0dc-6608515fb13c",
+      "credentials": {
+        "telegramApi": {
+          "id": "VNMrbMFxDGMu3qgU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "=⚠️ Kategori \"{{ $('Validate Transaction Status').item.json.category }}\" tidak ditemukan dalam budget savings Anda.\n\nAvailable categories:\n{{ $json.categories }}\n\nSilahkan:\n• Buat kategori savings baru beserta target amountnya, atau\n• Tentukan kategori savings yang tersedia yang paling sesuai untuk transaksi ini.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3520,
+        1088
+      ],
+      "id": "4a0d093f-da01-4043-8201-504b57be8c94",
+      "name": "Invalid Savings Warning",
+      "webhookId": "6754ce17-765c-4306-b65e-4c3c2b69b1c2",
+      "credentials": {
+        "telegramApi": {
+          "id": "VNMrbMFxDGMu3qgU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    (\n        SELECT account_id\n        FROM accounts\n        WHERE LOWER(account_name)=LOWER('{{ $json.from_account }}')\n        LIMIT 1\n    ) AS from_account_id,\n\n    (\n        SELECT account_id\n        FROM accounts\n        WHERE LOWER(account_name)=LOWER('{{ $json.to_account }}')\n        LIMIT 1\n    ) AS to_account_id,\n\n    (\n        SELECT savings_id\n        FROM savings\n        WHERE LOWER(savings_name)=LOWER('{{ $json.savings_name }}')\n        LIMIT 1\n    ) AS savings_id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3072,
+        480
+      ],
+      "id": "d7967fe3-a2a8-448e-a989-b53abcbc6efd",
+      "name": "Get ID",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const transaction = $json;\n\nif (\n  transaction.type === 'savings' &&\n  (!transaction.savings_name || transaction.savings_name.trim() === 'null')\n) {\n  transaction.savings_name = 'general';\n}\n\nreturn {\n  json: transaction\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2272,
+        800
+      ],
+      "id": "fa90097b-9d6e-47f3-b99c-fb3e4d429486",
+      "name": "Null Parser"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE savings\nSET current_amount = current_amount + {{ $('Check Transaction Type').item.json.amount }},\n  updated_at = NOW()\nWHERE savings_id = {{ $('Check Transaction Type').item.json.savings_id }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4192,
+        576
+      ],
+      "id": "e8f70e8e-6823-467a-965c-c4cab002d4e3",
+      "name": "Update Savings",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  ( SELECT json_agg(b)\n  FROM(\n    SELECT\n      category, limit_amount\n      FROM budgets) b\n    ) AS budgets,\n  \n  ( SELECT json_agg(a)\n  FROM(\n    SELECT \n      account_name, account_type, balance\n      FROM accounts) a\n    ) AS accounts,\n  \n  ( SELECT json_agg(s)\n  FROM(\n    SELECT\n      savings_name, target_amount, current_amount, target_date\n      FROM savings) s\n    ) AS savings;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1472,
+        800
+      ],
+      "id": "a993fe4e-e2c6-4e9a-96f6-e4e1d8d0ed17",
+      "name": "Get All Data",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE accounts\nSET balance = balance - {{ $json.amount }},\n  updated_at = NOW()\nWHERE account_id = {{ $json.from_account_id }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3744,
+        96
+      ],
+      "id": "39edb41c-0019-48c2-a07c-633782634407",
+      "name": "Update Balance (E)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE accounts\nSET balance = balance + {{ $json.amount }},\n  updated_at = NOW()\nWHERE account_id = {{ $json.to_account_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4192,
+        384
+      ],
+      "id": "dc867e89-51f4-402b-bc7f-e496f78f4ef0",
+      "name": "Update Balance (I)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE accounts\nSET balance = balance - {{ $json.amount }},\n  updated_at = NOW()\nWHERE account_id = {{ $json.from_account_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3968,
+        576
+      ],
+      "id": "e78763b5-8419-4329-9c3d-9553f7f0fde8",
+      "name": "Update Balance (S)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE accounts\nSET balance = CASE\n  WHEN(account_id = {{ $('Insert rows in Transactions').item.json.from_account_id }})\n  THEN(balance - {{ $('Insert rows in Transactions').item.json.amount}})\n\n  WHEN(account_id = {{ $('Insert rows in Transactions').item.json.to_account_id }})\n  THEN(balance + {{ $('Insert rows in Transactions').item.json.amount }})\n\n  ELSE balance\nEND,\n  updated_at = NOW()\n  \nWHERE account_id IN\n({{ $('Insert rows in Transactions').item.json.from_account_id }}, {{ $('Insert rows in Transactions').item.json.to_account_id }})",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4192,
+        768
+      ],
+      "id": "34824580-7bf4-4c5e-9d13-5a210eafb29d",
+      "name": "Update Balance (T)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  ( SELECT row_to_json(s)\n  FROM (\n    SELECT account_name, balance\n    FROM accounts\n    WHERE account_id = {{ $('Check Transaction Type').item.json.from_account_id }}\n    ) s\n  ) AS source,\n\n  ( SELECT row_to_json(d)\n  FROM (\n    SELECT account_name, balance\n    FROM accounts\n    WHERE account_id = {{ $('Check Transaction Type').item.json.to_account_id }}\n    ) d \n  ) AS destination;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        768
+      ],
+      "id": "b719ddb3-d2de-4c91-8fc7-d15d51f775fb",
+      "name": "Get Accounts Data",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const amount =\n  Number(\n    $('Insert rows in Transactions').item.json.amount || 0\n  );\n\nconst source = $json.source || {};\nconst destination = $json.destination || {};\n\nconst formatRupiah = (num) =>\n  new Intl.NumberFormat('id-ID').format(num || 0);\n\nreturn {\n  json: {\n    amount,\n    formatted_amount: formatRupiah(amount),\n\n    source_account: source.account_name,\n    source_balance: source.balance,\n    formatted_source_balance:\n      formatRupiah(source.balance),\n\n    destination_account:\n      destination.account_name,\n    destination_balance:\n      destination.balance,\n    formatted_destination_balance:\n      formatRupiah(destination.balance)\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4704,
+        768
+      ],
+      "id": "c50d4ff7-7e53-4a61-bd69-05fd7a8d5b80",
+      "name": "Calculate Transfer Analytics"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "148096af-673e-4e51-90fd-9bc4965e5349",
+              "name": "response",
+              "value": "=✅ Transfer dicatat\n\n💸 {{ $json.source_account }} ➜ {{ $json.destination_account }}\n💵 Rp{{ $json.formatted_amount }}\n\n📊 Saldo terbaru\n• {{ $json.source_account }}: Rp{{ $json.formatted_source_balance }}\n• {{ $json.destination_account }}: Rp{{ $json.formatted_destination_balance }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4992,
+        768
+      ],
+      "id": "f51d329a-ae8c-4b1c-9f44-492c6c09f02d",
+      "name": "Transfer Response"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "=You are an AI financial setup parser. Today's date is {{ $now.format('yyyy-MM-dd') }}.\n\nExtract these fields:\nentity, action, name, amount, target_date, acc_type, new_name, new_amount, new_target_date, new_acc_type\n\nEntities: budget, savings, account\nActions: create, update, increase, decrease, delete\n\nGeneral rules:\n- Return ONLY valid JSON. No markdown, no explanations.\n- If several setup actions are requested, return a JSON array with one full object per action.\n- Never invent missing values. Use null for any field that does not apply.\n- Preserve names exactly as the user wrote them (casing and language). Do not translate names.\n- name and new_name contain ONLY the object's own name. The word that tells the type (budget, kategori, category, savings, tabungan, goal, akun, account, rekening) sets `entity` and must NOT be part of the name. Also exclude action words (ubah, hapus, naikkan, ...) and field words (deadline, target, limit, saldo, tipe).\n- If only the capitalization of a name changes, treat it as a rename.\n- Amounts are integer Rupiah: rb/ribu/k = thousand, jt/juta = million. \"1,5jt\" = 1500000. \"1.500.000\" = 1500000.\n\nEntity keywords:\n- budget: budget, kategori, category, limit, batas pengeluaran\n- savings: savings, tabungan, goal, target tabungan\n- account: akun, account, rekening, bank, wallet, dompet, e-wallet\n- \"target\" with a goal name and no other object = savings\n\nAction keywords:\n- create: buat, bikin, tambah baru, create, new\n- increase: tambah, tambahin, naikkan, naikin, increase, add (to an existing object)\n- decrease: kurangi, turunkan, kurangin, decrease, reduce\n- update: ubah, ganti, set, jadi, rename, update, change\n- delete: hapus, buang, delete, remove\n- \"tambah <object> <name> <amount>\" is increase on an existing object, not create.\n- A clause with no action word that starts with a field word (target, limit, deadline, saldo, tipe) followed by an object name and a value is an update of that field (new_amount, new_target_date, new_acc_type), not a create.\n\nFields by action:\n- create: name = new object name; amount = initial balance, limit, or target; target_date = deadline if stated; acc_type = account type if stated; all new_* = null.\n- increase / decrease: name = existing object; amount = the change; every other field = null.\n- update: name = existing object; amount, target_date, acc_type = null; fill only the new_* fields the user changes (new_name, new_amount, new_target_date, new_acc_type); unchanged new_* = null.\n- delete: name = object being deleted; every other field = null.\n\nAccount types: normalize to one of cash, bank, credit_card, e-wallet, loan, other. If the user's type matches none of them, return it as written.\n\nDate rules:\n- create (target_date): output YYYY-MM-DD. Year only (\"2028\") = December 31 of that year; month and year (\"juni 2028\") = last day of that month.\n- update (new_target_date): output ONLY what the user stated, so the existing deadline keeps its other parts. Year only (\"2028\") -> \"2028\"; month and year (\"juni 2028\") -> \"2028-06\"; full date -> \"YYYY-MM-DD\".\n- Full date: use it exactly as stated. Day and month without year: the next upcoming occurrence from today.\n- Relative (\"tahun depan\", \"6 bulan lagi\"): resolve from today, then apply the rules above for the field.\n- Never fix or adjust a date yourself. If the user writes a date that does not exist (for example 31 Februari 2027), output it exactly as written (2027-02-31). The system validates dates and tells the user.\n- No date stated: null.\n- Use target_date for create and new_target_date for update.\n\nOutput format (one object, or an array of these):\n{\n  \"entity\": null,\n  \"action\": null,\n  \"name\": null,\n  \"amount\": null,\n  \"target_date\": null,\n  \"acc_type\": null,\n  \"new_name\": null,\n  \"new_amount\": null,\n  \"new_target_date\": null,\n  \"new_acc_type\": null\n}"
+            },
+            {
+              "content": "={{ $('Data Input').item.json.message }}"
+            }
+          ]
+        },
+        "builtInTools": {
+          "codeInterpreter": false
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        2496,
+        2960
+      ],
+      "id": "34c1e63c-c6f9-4598-b299-e5be22463def",
+      "name": "Parse Financial Setup",
+      "credentials": {
+        "openAiApi": {
+          "id": "Pve25KqxElFFMtHm",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output?.[0]?.content?.[0]?.text ?? '';\nconst text = String(raw).replace(/^```(?:json)?\\s*/i, '').replace(/```\\s*$/, '').trim();\n\nlet parsed;\ntry { parsed = JSON.parse(text); } catch (e) { parsed = null; }\n\nconst list = (Array.isArray(parsed) ? parsed : [parsed]).filter(x => x && typeof x === 'object');\n\n// If parsing fails or returns an empty result, route to the fallback path so the user still receives a response\nif (list.length === 0) {\n  return [{ json: { entity: null, action: null, name: null, raw_output: text } }];\n}\nreturn list.map(item => ({ json: item }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2848,
+        2960
+      ],
+      "id": "b63fd545-1ed9-4517-9bbe-95cc5c39c3a2",
+      "name": "Extract Financial Setup"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.entity }}",
+                    "rightValue": "budget",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "96c52196-78b1-41cd-92cd-660126b198ab"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "BUDGET"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "dac24d54-b51c-4c12-b595-c5ec9c45c938",
+                    "leftValue": "={{ $json.entity }}",
+                    "rightValue": "savings",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SAVINGS"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "247e199e-9c0b-4b5e-9f25-5437cbc33de8",
+                    "leftValue": "={{ $json.entity }}",
+                    "rightValue": "account",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ACCOUNT"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        3296,
+        2928
+      ],
+      "id": "dc7f4461-2229-41bb-a9a6-c8977ce41f9b",
+      "name": "Check Entities"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "99c73594-2319-4d41-90e0-8dbac722aabb",
+              "leftValue": "={{ $json.valid_status }}",
+              "rightValue": "valid",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3968,
+        1456
+      ],
+      "id": "96a51efd-43c7-4a54-b139-867167734f28",
+      "name": "If Valid (B)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const BULK = /\\b(semua|semuanya|seluruh|segala|all|every|everything)\\b/i;\n// a name that is only a type word (\"savings\", \"budget\", \"akun\") means the parser dropped \"semua\"\nconst TYPE_ONLY = /^(budgets?|kategori|categor(?:y|ies)|savings?|tabungan|goals?|akun|akun-akun|accounts?|rekening)$/i;\nlet rawMessage = '';\ntry { rawMessage = String($('Data Input').first().json.message ?? ''); } catch (err) { rawMessage = ''; }\nconst clauseFor = (name) => {\n  const n = String(name ?? '').toLowerCase();\n  const parts = rawMessage.split(/[,;\\n]|\\s+(?:dan|lalu|terus|kemudian|and|then)\\s+/i);\n  return parts.find(p => n && p.toLowerCase().includes(n)) ?? rawMessage;\n};\nconst isEmpty = (v) => v == null || v === 'null' || v === '';\n\nconst existenceItems = $input.all();\nconst entityItems = $('Check Entities').all();\n\nreturn existenceItems.map((item, index) => {\n  const e = entityItems[index].json;\n  const a = e.action;\n  const exists = item.json.category_exists;\n  const nameStr = isEmpty(e.name) ? '' : String(e.name).trim();\n\n  // value after the change; a change that would push it below 0 is rejected\n  const cur = item.json.current_amount == null ? null : Number(item.json.current_amount);\n  let nextAmount = null;\n  if (cur !== null && (a === 'increase' || a === 'decrease') && !isEmpty(e.amount)) {\n    nextAmount = cur + (a === 'decrease' ? -1 : 1) * Number(e.amount);\n  } else if (cur !== null && a === 'update' && (!isEmpty(e.new_amount) || !isEmpty(e.amount_delta))) {\n    nextAmount = (isEmpty(e.new_amount) ? cur : Number(e.new_amount)) + (Number(e.amount_delta) || 0);\n  }\n\n\n  let reason = null;\n  if (a === 'create') {\n    if (isEmpty(e.name) || isEmpty(e.amount) || Number(e.amount) <= 0) reason = 'incomplete';\n    else if (exists) reason = 'duplicate';\n  } else if (isEmpty(e.name)) {\n    reason = a === 'delete' ? 'bulk_delete' : 'name_required';\n  } else if (a === 'delete' && !exists && (BULK.test(nameStr) || TYPE_ONLY.test(nameStr) || BULK.test(clauseFor(nameStr)))) {\n    reason = 'bulk_delete';\n  } else if (!exists) {\n    reason = 'not_found';\n  } else if ((a === 'increase' || a === 'decrease') && isEmpty(e.amount)) {\n    reason = 'amount_required';\n  } else if (nextAmount !== null && nextAmount < 0) {\n    reason = 'below_zero';\n  } else if (a === 'update' && isEmpty(e.new_name) && isEmpty(e.new_amount) && isEmpty(e.amount_delta)) {\n    reason = 'nothing_to_update';\n  } else if (a === 'update' && item.json.new_name_taken) {\n    reason = 'duplicate_new';\n  }\n\n  return {\n    json: {\n      ...e, ...item.json,\n      valid_status: reason ? 'invalid' : 'valid',\n      invalid_reason: reason\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3744,
+        1456
+      ],
+      "id": "88167114-5a1e-4e54-acce-409d2c5e9a46",
+      "name": "Check Validation (B)"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "={{ (() => {\n  const list = $json.categories;\n  const rp = (n) => 'Rp' + new Intl.NumberFormat('id-ID').format(Number(n ?? 0));\n  const bad = $('Check Validation (B)').all().map(i => i.json).filter(j => j.valid_status === 'invalid');\n  if (!bad.length) return '⚠️ Perintah tidak bisa diproses.';\n\n  // exactly one rejected command: a short, specific message\n  const single = (j) => {\n    const nm = j.name;\n    switch (j.invalid_reason) {\n      case 'below_zero': return '⚠️ Limit budget \"' + nm + '\" tidak boleh di bawah Rp0. Limit saat ini ' + rp(j.current_amount) + ', pengurangan ' + rp(j.amount) + ' terlalu besar.\\n\\nContoh: \"kurangi budget ' + nm + ' ' + rp(Math.floor(Number(j.current_amount) / 2)).replace('Rp','').replace(/\\./g,'') + '\"';\n      case 'duplicate': return '⚠️ Budget \"' + nm + '\" sudah ada. Pakai nama lain, atau ubah budget yang sudah ada.\\n\\nBudget yang ada:\\n' + list + '\\n\\nContoh: \"set budget food jadi 600rb\"';\n      case 'duplicate_new': return '⚠️ Nama \"' + j.new_name + '\" sudah dipakai budget lain. Pilih nama yang berbeda.\\n\\nBudget yang ada:\\n' + list;\n      case 'incomplete': return '⚠️ Data budget belum lengkap. Sebutkan nama kategori dan limit.\\n\\nContoh: \"buat budget food 500rb\"';\n      case 'bulk_delete': return '⚠️ Penghapusan massal tidak didukung.\\n\\nDemi keamanan, budget dihapus satu per satu. Sebutkan namanya.\\n\\nBudget yang ada:\\n' + list + '\\n\\nContoh: \"hapus budget food\"';\n      case 'name_required': return '⚠️ Sebutkan nama budget yang ingin diubah.\\n\\nBudget yang ada:\\n' + list;\n      case 'amount_required': return '⚠️ Nominalnya belum disebutkan.\\n\\nContoh: \"tambah budget ' + (nm ?? 'food') + ' 100rb\"';\n      case 'nothing_to_update': return 'ℹ️ Tidak ada yang diubah. Sebutkan nama baru atau limit baru.\\n\\nContoh: \"set budget food jadi 600rb\"';\n      default: return '⚠️ Budget \"' + nm + '\" tidak ditemukan.\\n\\nBudget yang ada:\\n' + list + '\\n\\nUntuk membuat baru, tulis: \"buat budget food 500rb\"';\n    }\n  };\n\n  // several rejected commands: one combined message\n  const why = (j) => {\n    switch (j.invalid_reason) {\n      case 'below_zero': return 'hasil perubahan di bawah Rp0 (limit saat ini ' + rp(j.current_amount) + ')';\n      case 'duplicate': return 'nama sudah ada';\n      case 'duplicate_new': return 'nama baru \"' + j.new_name + '\" sudah dipakai budget lain';\n      case 'incomplete': return 'data belum lengkap (sebutkan nama dan limit)';\n      case 'bulk_delete': return 'penghapusan massal tidak didukung, sebutkan satu nama';\n      case 'name_required': return 'nama budget belum disebutkan';\n      case 'amount_required': return 'nominal belum disebutkan';\n      case 'nothing_to_update': return 'tidak ada yang diubah (sebutkan nama baru atau limit baru)';\n      default: return 'tidak ditemukan';\n    }\n  };\n\n  if (bad.length === 1) return single(bad[0]);\n\n  const hints = {\n    not_found: 'Untuk membuat baru, tulis: \"buat budget food 500rb\"',\n    duplicate: 'Contoh: \"set budget food jadi 600rb\"',\n    incomplete: 'Contoh: \"buat budget food 500rb\"',\n    bulk_delete: 'Contoh: \"hapus budget food\"',\n    amount_required: 'Contoh: \"tambah budget food 100rb\"',\n    nothing_to_update: 'Contoh: \"set budget food jadi 600rb\"'\n  };\n  const lines = bad.map(j => '• ' + (j.name ? '\"' + j.name + '\"' : '(tanpa nama)') + ': ' + why(j));\n  const hint = hints[bad[0].invalid_reason ?? 'not_found'] ?? '';\n  return '⚠️ Beberapa perintah tidak bisa diproses:\\n' + lines.join('\\n')\n    + '\\n\\nBudget yang ada:\\n' + list\n    + (hint ? '\\n\\n' + hint : '');\n})() }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4640,
+        1744
+      ],
+      "id": "0d3e3dff-c553-4814-998e-446d07e5fd66",
+      "name": "Invalid Action Warning (B)",
+      "webhookId": "b0e98f4f-26f5-45f6-8dc8-2e1a741980e5",
+      "credentials": {
+        "telegramApi": {
+          "id": "VNMrbMFxDGMu3qgU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT category\nFROM budgets\nORDER BY category;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3072,
+        704
+      ],
+      "id": "60d57bf8-78aa-4f1e-bb54-d07782356af8",
+      "name": "Get Budget Category (T)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const FIELD = 'category';\nconst EMPTY = '(belum ada budget)';\n\nconst names = items.map(item => item.json[FIELD]).filter(Boolean);\n\nreturn [{\n  json: {\n    categories: names.length\n      ? names.map(n => `• ${n}`).join('\\n')\n      : EMPTY\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3296,
+        704
+      ],
+      "id": "0857a22e-41ac-4800-866e-f77dde69d8db",
+      "name": "Show Budget Category (T)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT account_name\nFROM accounts\nORDER BY account_name;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3072,
+        896
+      ],
+      "id": "924d625c-9497-40c7-8da5-f7e9b8953322",
+      "name": "Get Account Name (T)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const FIELD = 'account_name';\nconst EMPTY = '(belum ada akun)';\n\nconst names = items.map(item => item.json[FIELD]).filter(Boolean);\n\nreturn [{\n  json: {\n    categories: names.length\n      ? names.map(n => `• ${n}`).join('\\n')\n      : EMPTY\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3296,
+        896
+      ],
+      "id": "01a507d2-ffab-4a79-bc59-4413808ea65d",
+      "name": "Show Account Name (T)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT savings_name\nFROM savings\nORDER BY savings_name;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3072,
+        1088
+      ],
+      "id": "c0b7d7c8-7117-454a-ae4e-c00a366bbf87",
+      "name": "Get Savings Name (T)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const FIELD = 'savings_name';\nconst EMPTY = '(belum ada savings)';\n\nconst names = items.map(item => item.json[FIELD]).filter(Boolean);\n\nreturn [{\n  json: {\n    categories: names.length\n      ? names.map(n => `• ${n}`).join('\\n')\n      : EMPTY\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3296,
+        1088
+      ],
+      "id": "d69bd6db-3c11-4cf6-96d6-6016b9fad262",
+      "name": "Show Savings Name (T)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT category\nFROM budgets\nORDER BY category;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4192,
+        1744
+      ],
+      "id": "46e5c802-23b6-47c3-b6bc-b2e8448c40de",
+      "name": "Get Budget Category (S)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO budgets(category, limit_amount)\nVALUES (\n  '{{ $json.name }}',\n  {{ $json.amount }}\n)\n  RETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        960
+      ],
+      "id": "21b26d1a-1d69-47dd-940e-b8a03356c12c",
+      "name": "Create (B)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM budgets\nWHERE LOWER(category) = LOWER('{{ $json.name }}')\n  RETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        1536
+      ],
+      "id": "f874455f-6114-4606-8dfb-88818da05452",
+      "name": "Delete (B)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "46d33d85-ebb1-440a-9eaa-b186c58d449f",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "create",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CREATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "70264e53-d062-4763-9426-18e366416649",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "=^(increase|decrease)$",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ADJUST"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "3ba03294-5b91-429b-b0d2-63d620644db2",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "UPDATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "14f8174b-9832-4d94-bb2f-cdf8a7ddf31d",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "DELETE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        4192,
+        1232
+      ],
+      "id": "0bd43795-46a8-4eb9-8d1e-2f1abe3bb695",
+      "name": "Check Action Type (B)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH old AS (\n  SELECT budget_id,\n         category     AS old_category,\n         limit_amount AS old_limit_amount\n  FROM budgets\n  WHERE LOWER(category) = LOWER('{{ $json.name }}')\n)\nUPDATE budgets b\nSET category     = COALESCE(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''), b.category),\n    limit_amount = COALESCE(NULLIF(NULLIF('{{ $json.new_amount }}', 'null'), '')::BIGINT, b.limit_amount)\n                + {{ Number($json.amount_delta) || 0 }},\n    updated_at   = NOW()\nFROM old\nWHERE b.budget_id = old.budget_id\nRETURNING b.*, old.old_category, old.old_limit_amount;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        1344
+      ],
+      "id": "ad5497e3-f98c-463b-beea-eea50451dfe5",
+      "name": "Update (B)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  EXISTS (\n    SELECT 1 FROM budgets\n    WHERE LOWER(category) = LOWER('{{ $json.name }}')\n  ) AS category_exists,\n  EXISTS (\n    SELECT 1 FROM budgets\n    WHERE LOWER(category) = LOWER(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''))\n      AND LOWER(category) <> LOWER('{{ $json.name }}')\n  ) AS new_name_taken,\n  (SELECT limit_amount FROM budgets WHERE LOWER(category) = LOWER('{{ $json.name }}')) AS current_amount;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3520,
+        1456
+      ],
+      "id": "9278c448-344a-4a68-ae6f-bc328207d40d",
+      "name": "Check Existence (B)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  EXISTS (\n    SELECT 1 FROM savings\n    WHERE LOWER(savings_name) = LOWER('{{ $json.name }}')\n  ) AS category_exists,\n  -- fallback: the parser sometimes keeps the type word in the name (\"savings rumah\" -> \"rumah\")\n  REGEXP_REPLACE('{{ $json.name }}', '^(savings|saving|tabungan|goal)\\s+', '', 'i') AS stripped_name,\n  EXISTS (\n    SELECT 1 FROM savings\n    WHERE LOWER(savings_name) = LOWER(REGEXP_REPLACE('{{ $json.name }}', '^(savings|saving|tabungan|goal)\\s+', '', 'i'))\n  ) AS stripped_exists,\n  EXISTS (\n    SELECT 1 FROM savings\n    WHERE LOWER(savings_name) = LOWER(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''))\n      AND LOWER(savings_name) <> LOWER('{{ $json.name }}')\n      AND LOWER(savings_name) <> LOWER(REGEXP_REPLACE('{{ $json.name }}', '^(savings|saving|tabungan|goal)\\s+', '', 'i'))\n  ) AS new_name_taken,\n  (SELECT target_amount FROM savings WHERE LOWER(savings_name) IN (LOWER('{{ $json.name }}'), LOWER(REGEXP_REPLACE('{{ $json.name }}', '^(savings|saving|tabungan|goal)\\s+', '', 'i'))) LIMIT 1) AS current_amount;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3520,
+        2448
+      ],
+      "id": "3e3de653-e3e4-4dd5-b12f-863303983987",
+      "name": "Check Existence (S)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "⚠️ Perintahnya belum lengkap atau kurang jelas.\n\nSebutkan:\n• Apa yang diubah (budget, savings, atau akun)\n• Namanya\n• Nominal, kalau perlu\n\nContoh:\n\"buat budget food 500rb\"\n\"set budget gym jadi 300rb\"\n\"buat savings rumah target 200jt\"\n\"ubah nama akun BCA jadi BCA Utama\"",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3520,
+        3856
+      ],
+      "id": "b3a64007-9380-45b6-b507-8a11f7c0c687",
+      "name": "Fallback Output (S)",
+      "webhookId": "7e3722fc-637f-417a-acb6-a4fc466bfabd",
+      "credentials": {
+        "telegramApi": {
+          "id": "VNMrbMFxDGMu3qgU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const BULK = /\\b(semua|semuanya|seluruh|segala|all|every|everything)\\b/i;\n// a name that is only a type word (\"savings\", \"budget\", \"akun\") means the parser dropped \"semua\"\nconst TYPE_ONLY = /^(budgets?|kategori|categor(?:y|ies)|savings?|tabungan|goals?|akun|akun-akun|accounts?|rekening)$/i;\nconst isEmpty = (v) => v == null || v === 'null' || v === '';\n\n// \"create\" of a name that already exists, in a clause with no create word\n// (\"target cobacoba 500000\"), is almost certainly an update.\nconst CREATE_WORDS = /\\b(buat|bikin|buatkan|create|make)\\b/i;\nlet rawMessage = '';\ntry { rawMessage = String($('Data Input').first().json.message ?? ''); } catch (err) { rawMessage = ''; }\nconst clauseFor = (name) => {\n  const n = String(name ?? '').toLowerCase();\n  const parts = rawMessage.split(/[,;\\n]|\\s+(?:dan|lalu|terus|kemudian|and|then)\\s+/i);\n  return parts.find(p => n && p.toLowerCase().includes(n)) ?? rawMessage;\n};\n\nconst MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];\nconst fmtId = (y, m, d) => `${d} ${MONTHS[m - 1]} ${y}`;\n\n// Checks a deadline and fixes what can be fixed safely.\n// - not parseable / impossible month or year  -> { value: null }   (rejected)\n// - day beyond the month length (31 Feb)       -> clamped to the last day, with a note\n// - allowPartial (update): \"2028\" and \"2028-06\" are accepted as-is; the DB fills in the rest\nconst fixDate = (s, allowPartial) => {\n  const t = String(s).trim();\n  const yearOk = (y) => y >= 1900 && y <= 2200;\n\n  if (allowPartial) {\n    if (/^\\d{4}$/.test(t)) return { value: yearOk(Number(t)) ? t : null };\n    const pm = /^(\\d{4})-(\\d{2})$/.exec(t);\n    if (pm) return { value: yearOk(Number(pm[1])) && Number(pm[2]) >= 1 && Number(pm[2]) <= 12 ? t : null };\n  }\n\n  const m = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(t);\n  if (!m) return { value: null };\n  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);\n  if (!yearOk(y) || mo < 1 || mo > 12 || d < 1 || d > 31) return { value: null };\n\n  const last = new Date(Date.UTC(y, mo, 0)).getUTCDate();\n  if (d <= last) return { value: t };\n\n  const fixed = `${m[1]}-${m[2]}-${String(last).padStart(2, '0')}`;\n  return {\n    value: fixed,\n    note: `⚠️ Tanggal ${fmtId(y, mo, d)} tidak ada, jadi deadline disesuaikan ke ${fmtId(y, mo, last)}.`\n  };\n};\n\nconst existenceItems = $input.all();\nconst entityItems = $('Check Entities').all();\n\nconst seenCreate = new Set();\nreturn existenceItems.map((item, index) => {\n  let e = entityItems[index].json;\n  // exact name first; if not found, retry without a leading type word (\"savings rumah\" -> \"rumah\")\n  const useStripped = !item.json.category_exists && item.json.stripped_exists === true;\n  const exists = item.json.category_exists || useStripped;\n\n  // create on an existing name without any \"buat/bikin\": treat as an update of that field\n  if (e.action === 'create' && exists && !CREATE_WORDS.test(clauseFor(e.name))) {\n    e = {\n      ...e,\n      action: 'update',\n      new_amount: e.amount,\n      new_target_date: e.target_date,\n      amount: null,\n      target_date: null\n    };\n  }\n\n  const a = e.action;\n  const nameStr = isEmpty(e.name) ? '' : String(e.name).trim();\n\n  // value after the change; a change that would push it below 0 is rejected\n  const cur = item.json.current_amount == null ? null : Number(item.json.current_amount);\n  let nextAmount = null;\n  if (cur !== null && (a === 'increase' || a === 'decrease') && !isEmpty(e.amount)) {\n    nextAmount = cur + (a === 'decrease' ? -1 : 1) * Number(e.amount);\n  } else if (cur !== null && a === 'update' && (!isEmpty(e.new_amount) || !isEmpty(e.amount_delta))) {\n    nextAmount = (isEmpty(e.new_amount) ? cur : Number(e.new_amount)) + (Number(e.amount_delta) || 0);\n  }\n\n\n  let dateFix = null;\n  if (a === 'create' && !isEmpty(e.target_date)) dateFix = fixDate(e.target_date, false);\n  if (a === 'update' && !isEmpty(e.new_target_date)) dateFix = fixDate(e.new_target_date, true);\n\n  let reason = null;\n  if (a === 'create') {\n    if (isEmpty(e.name) || isEmpty(e.amount) || Number(e.amount) <= 0) reason = 'incomplete';\n    else if (exists || seenCreate.has(nameStr.toLowerCase())) reason = 'duplicate';\n    else if (dateFix && dateFix.value == null) reason = 'bad_date';\n  } else if (isEmpty(e.name)) {\n    reason = a === 'delete' ? 'bulk_delete' : 'name_required';\n  } else if (a === 'delete' && !exists && (BULK.test(nameStr) || TYPE_ONLY.test(nameStr) || BULK.test(clauseFor(nameStr)))) {\n    reason = 'bulk_delete';\n  } else if (!exists) {\n    reason = 'not_found';\n  } else if ((a === 'increase' || a === 'decrease') && isEmpty(e.amount)) {\n    reason = 'amount_required';\n  } else if (nextAmount !== null && nextAmount < 0) {\n    reason = 'below_zero';\n  } else if (a === 'update' && dateFix && dateFix.value == null) {\n    reason = 'bad_date';\n  } else if (a === 'update' && isEmpty(e.new_name) && isEmpty(e.new_amount) && isEmpty(e.new_target_date) && isEmpty(e.amount_delta)) {\n    reason = 'nothing_to_update';\n  } else if (a === 'update' && item.json.new_name_taken) {\n    reason = 'duplicate_new';\n  }\n\n  if (a === 'create' && !reason) seenCreate.add(nameStr.toLowerCase());\n\n  const out = {\n    ...e, ...item.json,\n    valid_status: reason ? 'invalid' : 'valid',\n    invalid_reason: reason\n  };\n\n  // downstream nodes use the resolved name\n  if (useStripped) out.name = item.json.stripped_name;\n\n  // use the corrected date downstream and remember a note for the reply\n  if (!reason && dateFix && dateFix.value != null) {\n    if (a === 'create') out.target_date = dateFix.value;\n    else out.new_target_date = dateFix.value;\n    if (dateFix.note) out.date_note = dateFix.note;\n  }\n\n  return { json: out };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3744,
+        2448
+      ],
+      "id": "8e515ad3-8fa4-425d-9b69-c944b395246a",
+      "name": "Check Validation (S)",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO savings (\n  savings_name,\n  target_amount,\n  target_date\n)\nVALUES (\n  '{{ $json.name }}',\n  {{ $json.amount || 'NULL' }},\n  {{\n    $json.target_date\n      ? `CAST('${$json.target_date}' AS DATE)`\n      : 'NULL'\n  }}\n)\n  RETURNING *, TO_CHAR(target_date, 'YYYY-MM-DD') AS target_date_text;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        1952
+      ],
+      "id": "c7af4c37-450b-41e6-898a-0bae36f352aa",
+      "name": "Create (S)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const setupItems = $(\"Check Validation (S)\")\n  .all()\n  .filter(i => i.json.valid_status === \"valid\");\nconst rows = $(\"Merge (S)\").all().map(i => i.json);\n\nconst rp = (n) => \"Rp\" + new Intl.NumberFormat(\"id-ID\").format(Number(n ?? 0));\nconst same = (a, b) => a != null && b != null && String(a).toLowerCase() === String(b).toLowerCase();\nconst dateOrDash = (d) => (d ? String(d).slice(0, 10) : \"Belum ditentukan\");\n\nconst bar = (current, target) => {\n  if (!(Number(target) > 0)) return \"Belum memiliki target\";\n  const pct = Math.round((Number(current) / Number(target)) * 100);\n  const filled = Math.max(0, Math.min(10, Math.round(pct / 10)));\n  return \"▓\".repeat(filled) + \"░\".repeat(10 - filled) + \" \" + pct + \"%\";\n};\n\nconst out = [];\nfor (const item of setupItems) {\n  const data = item.json;\n  const action = data.action;\n\n  const s = rows.find(r => same(r.old_name ?? r.savings_name, data.name) || same(r.savings_name, data.name));\n  if (!s) continue;\n\n  const lines = [];\n  const summary = () => {\n    lines.push(\"\");\n    lines.push(`📅 Deadline: ${dateOrDash(s.target_date_text)}`);\n    lines.push(`🪙 Terkumpul: ${rp(s.current_amount)}`);\n    lines.push(`📊 Progress: ${bar(s.current_amount, s.target_amount)}`);\n  };\n\n  if (action === \"create\") {\n    lines.push(\"✅ Savings dibuat\", \"\");\n    lines.push(`🎯 ${s.savings_name}`);\n    lines.push(`💰 Target: ${rp(s.target_amount)}`);\n    summary();\n    if (data.date_note) lines.push(\"\", data.date_note);\n\n  } else if (action === \"increase\" || action === \"decrease\") {\n    const up = action === \"increase\";\n    const delta = Number(data.amount ?? 0);\n    const newT = Number(s.target_amount);\n    const oldT = up ? newT - delta : newT + delta;\n\n    lines.push(up ? \"✅ Target savings dinaikkan\" : \"✅ Target savings diturunkan\", \"\");\n    lines.push(`🎯 ${s.savings_name}`);\n    lines.push(`💰 Target: ${rp(oldT)} ➜ ${rp(newT)} (${up ? \"+\" : \"-\"}${rp(delta)})`);\n    summary();\n\n  } else if (action === \"update\") {\n    const oldName = s.old_name ?? data.name;\n    const oldT = Number(s.old_target_amount ?? s.target_amount);\n    const newT = Number(s.target_amount);\n    const oldD = s.old_target_date_text ?? null;\n    const newD = s.target_date_text ?? null;\n    const nameChanged = oldName !== s.savings_name;\n    const targetChanged = oldT !== newT;\n    const dateChanged = (oldD ?? \"\") !== (newD ?? \"\");\n\n    // perubahan relatif (naikkan/kurangi) yang dilipat ke update ini\n    const delta = Number(data.amount_delta ?? 0);\n    const showDelta = delta !== 0 && data.new_amount == null;\n    const deltaText = showDelta ? ` (${delta > 0 ? \"+\" : \"-\"}${rp(Math.abs(delta))})` : \"\";\n\n    lines.push(\"✅ Savings diperbarui\", \"\");\n    lines.push(`🎯 ${nameChanged ? `${oldName} ➜ ${s.savings_name}` : s.savings_name}`);\n    lines.push(`💰 Target: ${targetChanged ? `${rp(oldT)} ➜ ${rp(newT)}${deltaText}` : rp(newT)}`);\n    lines.push(\"\");\n    lines.push(`📅 Deadline: ${dateChanged ? `${dateOrDash(oldD)} ➜ ${dateOrDash(newD)}` : dateOrDash(newD)}`);\n    lines.push(`🪙 Terkumpul: ${rp(s.current_amount)}`);\n    lines.push(`📊 Progress: ${bar(s.current_amount, s.target_amount)}`);\n    if (data.date_note) lines.push(\"\", data.date_note);\n    if (!nameChanged && !targetChanged && !dateChanged) {\n      lines.push(\"\", \"ℹ️ Datanya sama dengan sebelumnya, tidak ada yang berubah.\");\n    }\n\n  } else if (action === \"delete\") {\n    lines.push(\"🗑️ Savings dihapus\", \"\");\n    lines.push(`🎯 ${s.savings_name}`);\n    lines.push(`💰 Target: ${rp(s.target_amount)}`);\n    lines.push(`🪙 Terkumpul terakhir: ${rp(s.current_amount)}`);\n\n  } else {\n    lines.push(\"✅ Selesai\");\n  }\n\n  out.push({ json: { action, message: lines.join(\"\\n\") } });\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4928,
+        2224
+      ],
+      "id": "3bebaf2a-bc2c-45ec-8020-830731c246e8",
+      "name": "Savings Formatter"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0b0eb9b0-fcbb-420e-aa5b-813ee1ec2349",
+              "name": "=response",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5216,
+        2224
+      ],
+      "id": "a100ef19-94be-446c-a4e5-553a461a5e27",
+      "name": "Savings Update Response"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH old AS (\n  SELECT savings_id,\n         savings_name  AS old_name,\n         target_amount AS old_target_amount,\n         TO_CHAR(target_date, 'YYYY-MM-DD') AS old_target_date_text\n  FROM savings\n  WHERE LOWER(savings_name) = LOWER('{{ $json.name }}')\n),\n-- new_target_date may be \"2028\", \"2028-06\" or \"2028-06-30\": split it into parts (NULL if absent)\nnd AS (\n  SELECT\n    SUBSTRING(NULLIF(NULLIF('{{ $json.new_target_date }}', 'null'), '') FROM '^(\\d{4})')::INT              AS y,\n    SUBSTRING(NULLIF(NULLIF('{{ $json.new_target_date }}', 'null'), '') FROM '^\\d{4}-(\\d{2})')::INT        AS m,\n    SUBSTRING(NULLIF(NULLIF('{{ $json.new_target_date }}', 'null'), '') FROM '^\\d{4}-\\d{2}-(\\d{2})')::INT AS d\n)\nUPDATE savings s\nSET savings_name  = COALESCE(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''), s.savings_name),\n    target_amount = COALESCE(NULLIF(NULLIF('{{ $json.new_amount }}', 'null'), '')::BIGINT, s.target_amount)\n                    + {{ Number($json.amount_delta) || 0 }},\n    -- missing parts are taken from the current deadline (month/day) or default to Dec 31;\n    -- the day is clamped to the month length (e.g. 29 Feb -> 28 Feb in a non-leap year)\n    target_date   = CASE\n      WHEN nd.y IS NULL THEN s.target_date\n      ELSE make_date(nd.y, COALESCE(nd.m, EXTRACT(MONTH FROM s.target_date)::INT, 12), 1)\n           + (LEAST(\n                COALESCE(nd.d, EXTRACT(DAY FROM s.target_date)::INT, 31),\n                EXTRACT(DAY FROM (make_date(nd.y, COALESCE(nd.m, EXTRACT(MONTH FROM s.target_date)::INT, 12), 1)\n                                  + INTERVAL '1 month - 1 day'))::INT\n              ) - 1)\n    END,\n    updated_at    = NOW()\nFROM old, nd\nWHERE s.savings_id = old.savings_id\nRETURNING s.*, TO_CHAR(s.target_date, 'YYYY-MM-DD') AS target_date_text,\n          old.old_name, old.old_target_amount, old.old_target_date_text;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        2336
+      ],
+      "id": "03450d5b-3398-4475-ab6d-53f706f4a731",
+      "name": "Update (S)",
+      "executeOnce": false,
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM savings\nWHERE LOWER(savings_name) = LOWER('{{ $json.name }}')\n  RETURNING *, TO_CHAR(target_date, 'YYYY-MM-DD') AS target_date_text;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        2528
+      ],
+      "id": "225997cf-7397-4920-b918-cde5736cce83",
+      "name": "Delete (S)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT savings_name\nFROM savings\nORDER BY savings_name;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4192,
+        2736
+      ],
+      "id": "25826a5a-76a5-41a6-a527-70645eaf60d0",
+      "name": "Get Savings Name (S)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const FIELD = 'savings_name';\nconst EMPTY = '(belum ada savings)';\n\n// unique names only: this node can receive the same rows once per rejected item\nconst names = [...new Set(items.map(item => item.json[FIELD]).filter(Boolean))];\n\nreturn [{\n  json: {\n    categories: names.length\n      ? names.map(n => `• ${n}`).join('\\n')\n      : EMPTY\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4416,
+        2736
+      ],
+      "id": "d18db85f-128f-4093-8e54-6f66fff8285c",
+      "name": "Show Savings Name (S)"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "={{ (() => {\n  const list = $json.categories;\n  const rp = (n) => 'Rp' + new Intl.NumberFormat('id-ID').format(Number(n ?? 0));\n  const bad = $('Check Validation (S)').all().map(i => i.json).filter(j => j.valid_status === 'invalid');\n  if (!bad.length) return '⚠️ Perintah tidak bisa diproses.';\n\n  // exactly one rejected command: a short, specific message\n  const single = (j) => {\n    const nm = j.name;\n    switch (j.invalid_reason) {\n      case 'below_zero': return '⚠️ Target savings \"' + nm + '\" tidak boleh di bawah Rp0. Target saat ini ' + rp(j.current_amount) + ', pengurangan ' + rp(j.amount) + ' terlalu besar.';\n      case 'duplicate': return '⚠️ Savings \"' + nm + '\" sudah ada. Pakai nama lain, atau ubah savings yang sudah ada.\\n\\nNama savings yang ada:\\n' + list + '\\n\\nContoh: \"ubah target savings rumah jadi 250jt\"';\n      case 'duplicate_new': return '⚠️ Nama \"' + j.new_name + '\" sudah dipakai savings lain. Pilih nama yang berbeda.\\n\\nNama savings yang ada:\\n' + list;\n      case 'incomplete': return '⚠️ Data savings belum lengkap. Sebutkan nama dan target.\\n\\nContoh: \"buat savings rumah target 200jt\"';\n      case 'bulk_delete': return '⚠️ Penghapusan massal tidak didukung.\\n\\nDemi keamanan, savings dihapus satu per satu. Sebutkan namanya.\\n\\nNama savings yang ada:\\n' + list + '\\n\\nContoh: \"hapus savings rumah\"';\n      case 'name_required': return '⚠️ Sebutkan nama savings yang ingin diubah.\\n\\nNama savings yang ada:\\n' + list;\n      case 'amount_required': return '⚠️ Nominalnya belum disebutkan.\\n\\nContoh: \"tambah savings ' + (nm ?? 'rumah') + ' 100rb\"';\n      case 'bad_date': return '⚠️ Tanggal deadline \"' + (j.target_date ?? j.new_target_date) + '\" tidak valid.\\n\\nContoh: \"deadline 28 februari 2027\"';\n      case 'nothing_to_update': return 'ℹ️ Tidak ada yang diubah. Sebutkan nama baru, target baru, atau deadline baru.\\n\\nContoh: \"ubah target savings rumah jadi 250jt\"';\n      default: return '⚠️ Nama savings \"' + nm + '\" tidak ditemukan.\\n\\nNama savings yang ada:\\n' + list + '\\n\\nUntuk membuat baru, tulis: \"buat savings rumah target 200jt\"';\n    }\n  };\n\n  // several rejected commands: one combined message\n  const why = (j) => {\n    switch (j.invalid_reason) {\n      case 'below_zero': return 'hasil perubahan di bawah Rp0 (target saat ini ' + rp(j.current_amount) + ')';\n      case 'duplicate': return 'nama sudah ada';\n      case 'duplicate_new': return 'nama baru \"' + j.new_name + '\" sudah dipakai savings lain';\n      case 'incomplete': return 'data belum lengkap (sebutkan nama dan target)';\n      case 'bulk_delete': return 'penghapusan massal tidak didukung, sebutkan satu nama';\n      case 'name_required': return 'nama savings belum disebutkan';\n      case 'amount_required': return 'nominal belum disebutkan';\n      case 'bad_date': return 'tanggal deadline tidak valid (' + (j.target_date ?? j.new_target_date) + ')';\n      case 'nothing_to_update': return 'tidak ada yang diubah (sebutkan nama baru, target baru, atau deadline baru)';\n      default: return 'tidak ditemukan';\n    }\n  };\n\n  if (bad.length === 1) return single(bad[0]);\n\n  const hints = {\n    not_found: 'Untuk membuat baru, tulis: \"buat savings rumah target 200jt\"',\n    duplicate: 'Contoh: \"ubah target savings rumah jadi 250jt\"',\n    incomplete: 'Contoh: \"buat savings rumah target 200jt\"',\n    bulk_delete: 'Contoh: \"hapus savings rumah\"',\n    amount_required: 'Contoh: \"tambah savings rumah 100rb\"',\n    bad_date: 'Contoh: \"deadline 28 februari 2027\"',\n    nothing_to_update: 'Contoh: \"ubah target savings rumah jadi 250jt\"'\n  };\n  const lines = bad.map(j => '• ' + (j.name ? '\"' + j.name + '\"' : '(tanpa nama)') + ': ' + why(j));\n  const hint = hints[bad[0].invalid_reason ?? 'not_found'] ?? '';\n  return '⚠️ Beberapa perintah tidak bisa diproses:\\n' + lines.join('\\n')\n    + '\\n\\nNama savings yang ada:\\n' + list\n    + (hint ? '\\n\\n' + hint : '');\n})() }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4640,
+        2736
+      ],
+      "id": "61ec8dba-c5da-4c78-9532-a3129c70adfa",
+      "name": "Invalid Action Warning (S)",
+      "webhookId": "70d4b887-536d-4fb4-af08-79dfc38dee81",
+      "credentials": {
+        "telegramApi": {
+          "id": "VNMrbMFxDGMu3qgU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "e5e632a6-a898-466a-8df2-7607151ac7dd",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "create",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CREATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "709a604a-dcab-416f-a1bd-1a1cef79f026",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "=^(increase|decrease)$",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ADJUST"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "268789ba-12a0-4c9d-a3b2-1ab256cc81c8",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "UPDATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "0512385e-c606-4d64-991f-b8c4cc637dc4",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "DELETE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        4192,
+        2224
+      ],
+      "id": "79d2739b-8ad8-4bc9-be86-10afdfb4f6eb",
+      "name": "Check Action Type (S)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE savings\nSET target_amount = CASE\n      WHEN '{{ $json.action }}' = 'increase'\n        THEN target_amount + COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::BIGINT\n      WHEN '{{ $json.action }}' = 'decrease'\n        THEN target_amount - COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::BIGINT\n      ELSE target_amount\n    END,\n    updated_at = NOW()\nWHERE LOWER(savings_name) = LOWER('{{ $json.name }}')\nRETURNING *, TO_CHAR(target_date, 'YYYY-MM-DD') AS target_date_text;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        2144
+      ],
+      "id": "d42f8ae5-8a2e-46fb-8f40-733c49f3ec47",
+      "name": "Adjust (S)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4640,
+        2192
+      ],
+      "id": "d2d65e5b-eb4c-4bc4-81ac-140f86e5015d",
+      "name": "Merge (S)"
+    },
+    {
+      "parameters": {
+        "numberInputs": 9
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        5440,
+        640
+      ],
+      "id": "ddc6b4ea-6438-4d48-a700-0d02637fcafa",
+      "name": "Merge All"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE budgets\nSET limit_amount = CASE\n      WHEN '{{ $json.action }}' = 'increase'\n        THEN limit_amount + COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::BIGINT\n      WHEN '{{ $json.action }}' = 'decrease'\n        THEN limit_amount - COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::BIGINT\n      ELSE limit_amount\n    END,\n    updated_at = NOW()\nWHERE LOWER(category) = LOWER('{{ $json.name }}')\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        1152
+      ],
+      "id": "ae1823b0-487c-4522-8028-1970fe08c11c",
+      "name": "Adjust (B)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4640,
+        1200
+      ],
+      "id": "ca0a2a7d-4e4f-4506-bb58-94fdf379e681",
+      "name": "Merge (B)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  EXISTS (\n    SELECT 1 FROM accounts\n    WHERE LOWER(account_name) = LOWER('{{ $json.name }}')\n) AS category_exists,\n  EXISTS (\n    SELECT 1 FROM accounts\n    WHERE LOWER(account_name) = LOWER(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''))\n    AND LOWER(account_name) <> LOWER('{{ $json.name }}')\n  ) AS new_name_taken,\n  (SELECT balance FROM accounts WHERE LOWER(account_name) = LOWER('{{ $json.name }}')) AS current_amount,\n  (SELECT account_type FROM accounts WHERE LOWER(account_name) = LOWER('{{ $json.name }}')) AS current_type;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3520,
+        3440
+      ],
+      "id": "74b0cf15-a623-4b73-b96f-b2c360423998",
+      "name": "Check Existence (A)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ALLOWED = ['cash', 'bank', 'credit_card', 'e-wallet', 'loan', 'other'];\nconst ALIAS = {\n  'ewallet': 'e-wallet', 'e wallet': 'e-wallet', 'dompet digital': 'e-wallet',\n  'tunai': 'cash', 'kartu kredit': 'credit_card', 'credit card': 'credit_card',\n  'pinjaman': 'loan', 'utang': 'loan', 'hutang': 'loan'\n};\n\n// \"delete all accounts\" -> empty name or a bulk-action keyword; never perform bulk deletion\nconst BULK = /\\b(semua|semuanya|seluruh|segala|all|every|everything)\\b/i;\n// a name that is only a type word (\"savings\", \"budget\", \"akun\") means the parser dropped \"semua\"\nconst TYPE_ONLY = /^(budgets?|kategori|categor(?:y|ies)|savings?|tabungan|goals?|akun|akun-akun|accounts?|rekening)$/i;\nlet rawMessage = '';\ntry { rawMessage = String($('Data Input').first().json.message ?? ''); } catch (err) { rawMessage = ''; }\nconst clauseFor = (name) => {\n  const n = String(name ?? '').toLowerCase();\n  const parts = rawMessage.split(/[,;\\n]|\\s+(?:dan|lalu|terus|kemudian|and|then)\\s+/i);\n  return parts.find(p => n && p.toLowerCase().includes(n)) ?? rawMessage;\n};\n\nconst isEmpty = (v) => v == null || v === 'null' || v === '';\n\nconst clean = (v) => {\n  if (v == null || v === 'null' || v === '') return null;\n  const t = String(v).trim().toLowerCase();\n  return ALIAS[t] ?? t;\n};\n\nconst existenceItems = $input.all();\nconst entityItems = $('Check Entities').all();\n\nreturn existenceItems.map((item, index) => {\n  const entity = entityItems[index].json;\n  const a = entity.action;\n  const type = clean(entity.acc_type);\n  const newType = clean(entity.new_acc_type);\n  const exists = item.json.category_exists;\n  const nameStr = isEmpty(entity.name) ? '' : String(entity.name).trim();\n\n  // balance after the change; cash/bank/e-wallet/other cannot go below 0\n  // (credit_card and loan may legitimately be negative)\n  const cur = item.json.current_amount == null ? null : Number(item.json.current_amount);\n  const effType = newType || item.json.current_type;\n  const canBeNegative = ['credit_card', 'loan'].includes(effType);\n  let nextAmount = null;\n  if (cur !== null && !canBeNegative) {\n    if ((a === 'increase' || a === 'decrease') && !isEmpty(entity.amount)) {\n      nextAmount = cur + (a === 'decrease' ? -1 : 1) * Number(entity.amount);\n    } else if (a === 'update' && (!isEmpty(entity.new_amount) || !isEmpty(entity.amount_delta))) {\n      nextAmount = (isEmpty(entity.new_amount) ? cur : Number(entity.new_amount)) + (Number(entity.amount_delta) || 0);\n    }\n  }\n\n\n  let reason = null;\n  if (a === 'create') {\n    if (isEmpty(entity.name) || isEmpty(entity.amount) || type == null) reason = 'incomplete';\n    else if (!ALLOWED.includes(type)) reason = 'bad_type';\n    else if (exists) reason = 'duplicate';\n  } else if (isEmpty(entity.name)) {\n    reason = a === 'delete' ? 'bulk_delete' : 'name_required';\n  } else if (a === 'delete' && !exists && (BULK.test(nameStr) || TYPE_ONLY.test(nameStr) || BULK.test(clauseFor(nameStr)))) {\n    reason = 'bulk_delete';\n  } else if (!exists) {\n    reason = 'not_found';\n  } else if ((a === 'increase' || a === 'decrease') && isEmpty(entity.amount)) {\n    reason = 'amount_required';\n  } else if (nextAmount !== null && nextAmount < 0) {\n    reason = 'below_zero';\n  } else if (a === 'update' && newType && !ALLOWED.includes(newType)) {\n    reason = 'bad_type';\n  } else if (a === 'update' && isEmpty(entity.new_name) && isEmpty(entity.new_amount) && !newType && isEmpty(entity.amount_delta)) {\n    reason = 'nothing_to_update';\n  } else if (a === 'update' && item.json.new_name_taken) {\n    reason = 'duplicate_new';\n  }\n\n  return {\n    json: {\n      ...entity, ...item.json,\n      acc_type: type, new_acc_type: newType,\n      valid_status: reason ? 'invalid' : 'valid',\n      invalid_reason: reason\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3744,
+        3440
+      ],
+      "id": "dbb4b103-ef0d-4ca4-a9e6-bc0a4f4af0cb",
+      "name": "Check Validation (A)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "65b7781c-250a-4658-9852-c5d3eb12499f",
+              "leftValue": "={{ $json.valid_status }}",
+              "rightValue": "valid",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3968,
+        2448
+      ],
+      "id": "bba605ec-1ec9-4e4a-9bb4-a725e5a1446c",
+      "name": "If Valid (S)",
+      "alwaysOutputData": false,
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "668cb566-e76d-4246-acb8-3e064be371e7",
+              "leftValue": "={{ $json.valid_status }}",
+              "rightValue": "valid",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3968,
+        3440
+      ],
+      "id": "972c7acf-4897-46ca-9461-c259ef618482",
+      "name": "If Valid (A)"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "={{ (() => {\n  const list = $json.categories;\n  const rp = (n) => 'Rp' + new Intl.NumberFormat('id-ID').format(Number(n ?? 0));\n  const bad = $('Check Validation (A)').all().map(i => i.json).filter(j => j.valid_status === 'invalid');\n  if (!bad.length) return '⚠️ Perintah tidak bisa diproses.';\n  const types = 'cash, bank, e-wallet, credit card, loan, other';\n  // exactly one rejected command: a short, specific message\n  const single = (j) => {\n    const nm = j.name;\n    switch (j.invalid_reason) {\n      case 'below_zero': return '⚠️ Saldo akun \"' + nm + '\" tidak boleh di bawah Rp0. Saldo saat ini ' + rp(j.current_amount) + ', pengurangan ' + rp(j.amount) + ' terlalu besar.\\n\\nContoh: \"kurangi saldo akun ' + nm + ' ' + String(Math.floor(Number(j.current_amount) / 2)) + '\"';\n      case 'duplicate': return '⚠️ Akun \"' + nm + '\" sudah ada. Pakai nama lain, atau ubah akun yang sudah ada.\\n\\nAkun yang ada:\\n' + list;\n      case 'duplicate_new': return '⚠️ Nama \"' + j.new_name + '\" sudah dipakai akun lain. Pilih nama yang berbeda.\\n\\nAkun yang ada:\\n' + list;\n      case 'name_required': return '⚠️ Sebutkan nama akun yang ingin diubah.\\n\\nAkun yang ada:\\n' + list;\n      case 'amount_required': return '⚠️ Nominalnya belum disebutkan.\\n\\nContoh: \"tambah saldo akun ' + (nm ?? 'BCA') + ' 100rb\"';\n      case 'nothing_to_update': return 'ℹ️ Tidak ada yang diubah. Sebutkan nama baru, tipe baru, atau saldo baru.\\n\\nContoh: \"ubah tipe akun ' + (nm ?? 'BCA') + ' jadi e-wallet\"';\n      case 'bad_type': return '⚠️ Tipe akun tidak dikenali.\\n\\nTipe yang tersedia: ' + types + '\\n\\nContoh: \"buat akun BCA tipe bank saldo awal 5jt\"';\n      case 'incomplete': return '⚠️ Data akun belum lengkap. Sebutkan nama, tipe (' + types + '), dan saldo awal.\\n\\nContoh: \"buat akun BCA tipe bank saldo awal 5jt\"';\n      case 'bulk_delete': return '⚠️ Penghapusan massal tidak didukung.\\n\\nDemi keamanan, akun hanya dapat dihapus satu per satu. Sebutkan nama akunnya.\\n\\nAkun yang ada:\\n' + list + '\\n\\nContoh: \"hapus akun OVO\"';\n      default: return '⚠️ Akun \"' + nm + '\" tidak ditemukan.\\n\\nAkun yang ada:\\n' + list;\n    }\n  };\n\n  // several rejected commands: one combined message\n  const why = (j) => {\n    switch (j.invalid_reason) {\n      case 'below_zero': return 'hasil perubahan di bawah Rp0 (saldo saat ini ' + rp(j.current_amount) + ')';\n      case 'duplicate': return 'nama sudah ada';\n      case 'duplicate_new': return 'nama baru \"' + j.new_name + '\" sudah dipakai akun lain';\n      case 'name_required': return 'nama akun belum disebutkan';\n      case 'amount_required': return 'nominal belum disebutkan';\n      case 'nothing_to_update': return 'tidak ada yang diubah (sebutkan nama baru, tipe baru, atau saldo baru)';\n      case 'bad_type': return 'tipe akun tidak dikenali (' + types + ')';\n      case 'incomplete': return 'data belum lengkap (sebutkan nama, tipe, dan saldo awal)';\n      case 'bulk_delete': return 'penghapusan massal tidak didukung, sebutkan satu nama';\n      default: return 'tidak ditemukan';\n    }\n  };\n\n  if (bad.length === 1) return single(bad[0]);\n\n  const hints = {\n    duplicate: 'Contoh: \"ubah saldo akun BCA jadi 5jt\"',\n    bad_type: 'Tipe yang tersedia: ' + types,\n    incomplete: 'Contoh: \"buat akun BCA tipe bank saldo awal 5jt\"',\n    bulk_delete: 'Contoh: \"hapus akun OVO\"',\n    amount_required: 'Contoh: \"tambah saldo akun BCA 100rb\"',\n    nothing_to_update: 'Contoh: \"ubah tipe akun BCA jadi e-wallet\"'\n  };\n  const lines = bad.map(j => '• ' + (j.name ? '\"' + j.name + '\"' : '(tanpa nama)') + ': ' + why(j));\n  const hint = hints[bad[0].invalid_reason ?? 'not_found'] ?? '';\n  return '⚠️ Beberapa perintah tidak bisa diproses:\\n' + lines.join('\\n')\n    + '\\n\\nAkun yang ada:\\n' + list\n    + (hint ? '\\n\\n' + hint : '');\n})() }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4640,
+        3728
+      ],
+      "id": "a7fb344d-6c9c-422a-80b8-3d6739092a25",
+      "name": "Invalid Action Warning (A)",
+      "webhookId": "44f0d31f-cb6f-4278-a9bd-d0de7a780f7c",
+      "credentials": {
+        "telegramApi": {
+          "id": "VNMrbMFxDGMu3qgU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "create",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "959c1b95-d79e-422b-9d37-f799adb2457e"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CREATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "93c2fac0-bb4e-4d25-81e2-fb1ef0f6a22a",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "=^(increase|decrease)$",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ADJUST"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "9ac85dce-484e-4bd0-a57c-30a3d6f382aa",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "UPDATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "b9510a90-e64d-47c2-b120-c05917284f0d",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "DELETE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        4192,
+        3216
+      ],
+      "id": "965017e3-242d-4bda-bef4-b108a1fb2aef",
+      "name": "Check Action Type (A)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO accounts (\n  account_name,\n  account_type,\n  balance\n)\nVALUES (\n  '{{ $('Check Entities').item.json.name }}',\n  '{{ $json.acc_type }}',\n  {{ $('Check Entities').item.json.amount || 'NULL' }}\n)\n  RETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        2944
+      ],
+      "id": "fa9ba909-a00a-4abd-9537-e9c858176efe",
+      "name": "Create (A)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH old AS (\n  SELECT account_id,\n         account_name AS old_name,\n         account_type AS old_type,\n         balance      AS old_balance\n  FROM accounts\n  WHERE LOWER(account_name) = LOWER('{{ $json.name }}')\n)\nUPDATE accounts a\nSET balance = CASE\n      WHEN '{{ $json.action }}' = 'increase'\n        THEN a.balance + COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::bigint\n      WHEN '{{ $json.action }}' = 'decrease'\n        THEN a.balance - COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::bigint\n      ELSE a.balance\n    END,\n    updated_at = NOW()\nFROM old\nWHERE a.account_id = old.account_id\nRETURNING a.*, old.old_name, old.old_type, old.old_balance;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        3136
+      ],
+      "id": "ddbe5606-7406-479e-8d49-5306f948dc25",
+      "name": "Adjust (A)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH old AS (\n  SELECT account_id,\n         account_name AS old_name,\n         account_type AS old_type,\n         balance      AS old_balance\n  FROM accounts\n  WHERE LOWER(account_name) = LOWER('{{ $json.name }}')\n)\nUPDATE accounts a\nSET account_name = COALESCE(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''), a.account_name),\n    account_type = COALESCE(NULLIF(NULLIF('{{ $json.new_acc_type }}', 'null'), ''), a.account_type),\n    balance = COALESCE(NULLIF(NULLIF('{{ $json.new_amount }}', 'null'), '')::BIGINT, a.balance)\n                + {{ Number($json.amount_delta) || 0 }},\n    updated_at   = NOW()\nFROM old\nWHERE a.account_id = old.account_id\nRETURNING a.*, old.old_name, old.old_type, old.old_balance;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        3328
+      ],
+      "id": "189659ac-ff4a-42c9-a59f-8c84087da76c",
+      "name": "Update (A)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM accounts\nWHERE LOWER(account_name) = LOWER('{{ $json.name }}')\n  RETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4416,
+        3520
+      ],
+      "id": "66a47e76-bf14-45b4-9835-a7e83572b624",
+      "name": "Delete (A)",
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4640,
+        3184
+      ],
+      "id": "342d84a8-fc39-4f30-b495-5590a5f1ff10",
+      "name": "Merge (A)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const setupItems = $(\"Check Validation (A)\")\n  .all()\n  .filter(i => i.json.valid_status === \"valid\");\nconst rows = $(\"Merge (A)\").all().map(i => i.json);\n\nconst rp = (n) => \"Rp\" + new Intl.NumberFormat(\"id-ID\").format(Number(n ?? 0));\nconst same = (a, b) => a != null && b != null && String(a).toLowerCase() === String(b).toLowerCase();\n\nconst ICONS = { bank: \"🏦\", \"e-wallet\": \"📱\", cash: \"💵\", credit_card: \"💳\", loan: \"🧾\", other: \"📦\" };\nconst iconFor = (type) => ICONS[String(type ?? \"\").toLowerCase()] ?? \"📦\";\n\nreturn setupItems.map((item) => {\n  const data = item.json;\n  const action = data.action;\n\n  // cocokkan lewat nama (bukan urutan), supaya item lain tidak menggeser hasilnya\n  const acc = rows.find(r => same(r.old_name ?? r.account_name, data.name) || same(r.account_name, data.name));\n\n  if (!acc || !acc.account_id) {\n    return {\n      json: {\n        action,\n        message: `⚠️ Tidak ada yang berubah.\\n\\nAkun \"${data.name}\" tidak ditemukan atau datanya sama.`\n      }\n    };\n  }\n\n  const icon = iconFor(acc.account_type);\n  const lines = [];\n\n  if (action === \"create\") {\n    lines.push(\"✅ Akun dibuat\", \"\");\n    lines.push(`${icon} ${acc.account_name}`);\n    lines.push(`🏷️ Tipe: ${acc.account_type}`);\n    lines.push(`💰 Saldo: ${rp(acc.balance)}`);\n\n  } else if (action === \"increase\" || action === \"decrease\") {\n    const up = action === \"increase\";\n    const delta = Number(data.amount ?? 0);\n    const newBal = Number(acc.balance);\n    const oldBal = up ? newBal - delta : newBal + delta;\n\n    lines.push(up ? \"✅ Saldo bertambah\" : \"✅ Saldo berkurang\", \"\");\n    lines.push(`${icon} ${acc.account_name}`);\n    lines.push(`🏷️ Tipe: ${acc.account_type}`);\n    lines.push(`💰 Saldo: ${rp(oldBal)} ➜ ${rp(newBal)} (${up ? \"+\" : \"-\"}${rp(delta)})`);\n\n  } else if (action === \"update\") {\n    const oldName = acc.old_name ?? data.name;\n    const oldType = acc.old_type;\n    const oldBal = Number(acc.old_balance ?? acc.balance);\n    const newBal = Number(acc.balance);\n\n    // perubahan relatif (naikkan/kurangi) yang dilipat ke update ini\n    const delta = Number(data.amount_delta ?? 0);\n    const showDelta = delta !== 0 && data.new_amount == null;\n    const deltaText = showDelta ? ` (${delta > 0 ? \"+\" : \"-\"}${rp(Math.abs(delta))})` : \"\";\n\n    const nameChanged = oldName !== acc.account_name;\n    const typeChanged = oldType !== acc.account_type;\n    const balChanged = oldBal !== newBal;\n\n    lines.push(\"✅ Akun diperbarui\", \"\");\n    lines.push(`${icon} ${nameChanged ? `${oldName} ➜ ${acc.account_name}` : acc.account_name}`);\n    lines.push(`🏷️ Tipe: ${typeChanged ? `${oldType} ➜ ${acc.account_type}` : acc.account_type}`);\n    lines.push(`💰 Saldo: ${balChanged ? `${rp(oldBal)} ➜ ${rp(newBal)}${deltaText}` : rp(newBal)}`);\n\n    if (!nameChanged && !typeChanged && !balChanged) {\n      lines.push(\"\", \"ℹ️ Datanya sama dengan sebelumnya, tidak ada yang berubah.\");\n    }\n\n  } else if (action === \"delete\") {\n    lines.push(\"🗑️ Akun dihapus\", \"\");\n    lines.push(`${icon} ${acc.account_name}`);\n    lines.push(`🏷️ Tipe: ${acc.account_type}`);\n    lines.push(`💰 Saldo terakhir: ${rp(acc.balance)}`);\n\n  } else {\n    lines.push(\"✅ Selesai\");\n  }\n\n  return { json: { action, message: lines.join(\"\\n\") } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4928,
+        3216
+      ],
+      "id": "eec35bc5-ecc2-493c-b87d-fde09eb9b499",
+      "name": "Account Formatter"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "86e20350-0d5c-4a3c-8834-e663c55176a1",
+              "name": "response",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5216,
+        3216
+      ],
+      "id": "050c2e5b-84be-4a54-830e-5593b73daae8",
+      "name": "Account Update Response"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "🤔 Aku belum paham pesan itu.\n\nCoba salah satu format ini:\n\n💸 Catat transaksi\n\"makan siang 50rb pakai BCA\"\n\"gaji masuk 10jt ke BCA\"\n\n🎯 Atur akun, budget, savings\n\"buat akun BCA tipe bank saldo awal 5jt\"\n\"buat budget food 500rb\"\n\"ubah tipe akun Dompet jadi e-wallet\"\n\n📊 Lihat ringkasan\n\"sisa uangku berapa?\"",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1472,
+        3152
+      ],
+      "id": "92c1fe52-e7da-4044-a363-2234058daa7b",
+      "name": "Unmatched Input",
+      "webhookId": "5b48938a-7f87-4bb4-8bac-039da21635e3",
+      "credentials": {
+        "telegramApi": {
+          "id": "VNMrbMFxDGMu3qgU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT account_name\nFROM accounts\nORDER BY account_name;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4192,
+        3728
+      ],
+      "id": "119a439b-d92d-4723-a546-b892a9a109bf",
+      "name": "Get Account Name (S)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "X3Ve0MVobb3rWPDH",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const FIELD = 'account_name';\nconst EMPTY = '(belum ada akun)';\n\n// unique names only: this node can receive the same rows once per rejected item\nconst names = [...new Set(items.map(item => item.json[FIELD]).filter(Boolean))];\n\nreturn [{\n  json: {\n    categories: names.length\n      ? names.map(n => `• ${n}`).join('\\n')\n      : EMPTY\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4416,
+        3728
+      ],
+      "id": "591f7333-2eff-4c4f-9127-35f098f58791",
+      "name": "Show Account Name (S)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const FIELD = 'category';\nconst EMPTY = '(belum ada budget)';\n\n// unique names only: this node can receive the same rows once per rejected item\nconst names = [...new Set(items.map(item => item.json[FIELD]).filter(Boolean))];\n\nreturn [{\n  json: {\n    categories: names.length\n      ? names.map(n => `• ${n}`).join('\\n')\n      : EMPTY\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4416,
+        1744
+      ],
+      "id": "49d01baf-f61e-4e35-b7a2-fb5eb7ba8cff",
+      "name": "Show Budget Category (S)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\nconst key = (s) => String(s ?? '').trim().toLowerCase();\nconst same = (a, b) => key(a) !== '' && key(a) === key(b);\n\nconst updates = items.filter(i => i.action === 'update').map(i => ({ ...i }));\nconst rest = [];\n\nfor (const it of items) {\n  if (it.action === 'update') continue;\n\n  if (it.action === 'increase' || it.action === 'decrease') {\n    const target = updates.find(u =>\n      u.entity === it.entity && (same(u.name, it.name) || same(u.new_name, it.name))\n    );\n    if (target) {\n      const signed = (it.action === 'increase' ? 1 : -1) * Number(it.amount ?? 0);\n      target.amount_delta = Number(target.amount_delta ?? 0) + signed;\n      continue; // dilipat ke update\n    }\n  }\n  rest.push(it);\n}\n\n// pairedItem: tell n8n these items all come from the incoming message\nreturn [...updates, ...rest].map(json => ({ json, pairedItem: { item: 0 } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3072,
+        2960
+      ],
+      "id": "e1e58963-5177-48f3-9e0b-cb09e25f7e5f",
+      "name": "Merge Same-Object"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Get Monthly Spending": {
+      "main": [
+        [
+          {
+            "node": "Get Budget Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Budget Limit": {
+      "main": [
+        [
+          {
+            "node": "Budget Tracking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Budget Warning Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Transaction": {
+      "main": [
+        [
+          {
+            "node": "Extract Transaction Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Budget": {
+      "main": [
+        [
+          {
+            "node": "Budget Warning Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Budget Safe Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Monthly Income": {
+      "main": [
+        [
+          {
+            "node": "Calculate Income Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Budget Tracking": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Transaction Data": {
+      "main": [
+        [
+          {
+            "node": "Null Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Monthly Savings": {
+      "main": [
+        [
+          {
+            "node": "Calculate Savings Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Total Income": {
+      "main": [
+        [
+          {
+            "node": "Generate Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Intents": {
+      "main": [
+        [
+          {
+            "node": "Split Out Intents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Get All Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse Financial Setup",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Total Income",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unmatched Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Intents": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Intent Router": {
+      "main": [
+        [
+          {
+            "node": "Extract Intents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Savings Analytics": {
+      "main": [
+        [
+          {
+            "node": "Savings Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Income Analytics": {
+      "main": [
+        [
+          {
+            "node": "Income Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Input": {
+      "main": [
+        [
+          {
+            "node": "AI Intent Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Budget Safe Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Savings Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Budget Update Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Income Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Data Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Analytics": {
+      "main": [
+        [
+          {
+            "node": "Financial Insight Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Financial Insight Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 8
+          }
+        ]
+      ]
+    },
+    "Budget Formatter": {
+      "main": [
+        [
+          {
+            "node": "Budget Update Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Transaction Type": {
+      "main": [
+        [
+          {
+            "node": "Update Balance (E)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Balance (I)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Balance (S)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Balance (T)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Category Status": {
+      "main": [
+        [
+          {
+            "node": "Validate Transaction Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Transaction Status": {
+      "main": [
+        [
+          {
+            "node": "Get ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Budget Category (T)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Account Name (T)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Account Name (T)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Savings Name (T)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert rows in Transactions": {
+      "main": [
+        [
+          {
+            "node": "Check Transaction Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get ID": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in Transactions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Null Parser": {
+      "main": [
+        [
+          {
+            "node": "Check Category Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Savings": {
+      "main": [
+        [
+          {
+            "node": "Calculate Monthly Savings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Data": {
+      "main": [
+        [
+          {
+            "node": "Parse Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Balance (E)": {
+      "main": [
+        [
+          {
+            "node": "Get Monthly Spending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Balance (I)": {
+      "main": [
+        [
+          {
+            "node": "Calculate Monthly Income",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Balance (S)": {
+      "main": [
+        [
+          {
+            "node": "Update Savings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Balance (T)": {
+      "main": [
+        [
+          {
+            "node": "Get Accounts Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Accounts Data": {
+      "main": [
+        [
+          {
+            "node": "Calculate Transfer Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Transfer Analytics": {
+      "main": [
+        [
+          {
+            "node": "Transfer Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transfer Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Parse Financial Setup": {
+      "main": [
+        [
+          {
+            "node": "Extract Financial Setup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Financial Setup": {
+      "main": [
+        [
+          {
+            "node": "Merge Same-Object",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Entities": {
+      "main": [
+        [
+          {
+            "node": "Check Existence (B)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Existence (S)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Existence (A)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback Output (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Valid (B)": {
+      "main": [
+        [
+          {
+            "node": "Check Action Type (B)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Budget Category (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation (B)": {
+      "main": [
+        [
+          {
+            "node": "If Valid (B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Budget Category (T)": {
+      "main": [
+        [
+          {
+            "node": "Show Budget Category (T)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Budget Category (T)": {
+      "main": [
+        [
+          {
+            "node": "Invalid Budget Warning",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Account Name (T)": {
+      "main": [
+        [
+          {
+            "node": "Show Account Name (T)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Account Name (T)": {
+      "main": [
+        [
+          {
+            "node": "Invalid Account Warning",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Savings Name (T)": {
+      "main": [
+        [
+          {
+            "node": "Show Savings Name (T)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Savings Name (T)": {
+      "main": [
+        [
+          {
+            "node": "Invalid Savings Warning",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Budget Category (S)": {
+      "main": [
+        [
+          {
+            "node": "Show Budget Category (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create (B)": {
+      "main": [
+        [
+          {
+            "node": "Merge (B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete (B)": {
+      "main": [
+        [
+          {
+            "node": "Merge (B)",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Check Action Type (B)": {
+      "main": [
+        [
+          {
+            "node": "Create (B)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Adjust (B)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update (B)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete (B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update (B)": {
+      "main": [
+        [
+          {
+            "node": "Merge (B)",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Check Existence (B)": {
+      "main": [
+        [
+          {
+            "node": "Check Validation (B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existence (S)": {
+      "main": [
+        [
+          {
+            "node": "Check Validation (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation (S)": {
+      "main": [
+        [
+          {
+            "node": "If Valid (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create (S)": {
+      "main": [
+        [
+          {
+            "node": "Merge (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Savings Formatter": {
+      "main": [
+        [
+          {
+            "node": "Savings Update Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Savings Update Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 6
+          }
+        ]
+      ]
+    },
+    "Update (S)": {
+      "main": [
+        [
+          {
+            "node": "Merge (S)",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Delete (S)": {
+      "main": [
+        [
+          {
+            "node": "Merge (S)",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Get Savings Name (S)": {
+      "main": [
+        [
+          {
+            "node": "Show Savings Name (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Savings Name (S)": {
+      "main": [
+        [
+          {
+            "node": "Invalid Action Warning (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Action Type (S)": {
+      "main": [
+        [
+          {
+            "node": "Create (S)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Adjust (S)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update (S)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adjust (S)": {
+      "main": [
+        [
+          {
+            "node": "Merge (S)",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge (S)": {
+      "main": [
+        [
+          {
+            "node": "Savings Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge All": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adjust (B)": {
+      "main": [
+        [
+          {
+            "node": "Merge (B)",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge (B)": {
+      "main": [
+        [
+          {
+            "node": "Budget Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existence (A)": {
+      "main": [
+        [
+          {
+            "node": "Check Validation (A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Valid (S)": {
+      "main": [
+        [
+          {
+            "node": "Check Action Type (S)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Savings Name (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation (A)": {
+      "main": [
+        [
+          {
+            "node": "If Valid (A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Valid (A)": {
+      "main": [
+        [
+          {
+            "node": "Check Action Type (A)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Account Name (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Action Type (A)": {
+      "main": [
+        [
+          {
+            "node": "Create (A)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Adjust (A)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update (A)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete (A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create (A)": {
+      "main": [
+        [
+          {
+            "node": "Merge (A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adjust (A)": {
+      "main": [
+        [
+          {
+            "node": "Merge (A)",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Update (A)": {
+      "main": [
+        [
+          {
+            "node": "Merge (A)",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Delete (A)": {
+      "main": [
+        [
+          {
+            "node": "Merge (A)",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge (A)": {
+      "main": [
+        [
+          {
+            "node": "Account Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Account Formatter": {
+      "main": [
+        [
+          {
+            "node": "Account Update Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Account Update Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 7
+          }
+        ]
+      ]
+    },
+    "Get Account Name (S)": {
+      "main": [
+        [
+          {
+            "node": "Show Account Name (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Account Name (S)": {
+      "main": [
+        [
+          {
+            "node": "Invalid Action Warning (A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Budget Category (S)": {
+      "main": [
+        [
+          {
+            "node": "Invalid Action Warning (B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Same-Object": {
+      "main": [
+        [
+          {
+            "node": "Check Entities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "2839fa01-66bf-427d-a3cb-466ed32ddaed",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": ""
+  },
+  "nodeGroups": [],
+  "id": "eVW96Np7QjJwZNN8",
+  "tags": []
+}

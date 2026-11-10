@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: budget-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: Asia/Jakarta
+      PGTZ: Asia/Jakarta
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # init.sql is executed automatically only when the volume is empty (on the first run)
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    # intentionally omitted "ports": Postgres is accessible only within the Docker Compose network
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: budget-n8n
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      # public URL from the tunnel; automatically populated by start.sh
+      WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678}
+      N8N_PROXY_HOPS: 1
+      GENERIC_TIMEZONE: Asia/Jakarta
+      TZ: Asia/Jakarta
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+  
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: budget-cloudflared
+    command: tunnel --no-autoupdate --url http://n8n:5678
+    # "no": On restart, the quick tunnel URL changes, making the Telegram webhook invalid
+    # run via start.sh to ensure WEBHOOK_URL is updated
+    restart: "no"
+
+volumes:
+  postgres_data:
+  n8n_data:

@@ -1,0 +1,5 @@
+# secrets and local-only files
+.env
+*.local.json
+backups/
+*.sql.gz

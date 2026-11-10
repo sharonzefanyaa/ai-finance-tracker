@@ -1,0 +1,2750 @@
+{
+  "name": "finance-tracker",
+  "nodes": [
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an AI financial transaction parser.\nExtract structured financial transaction data from natural language input.\nReturn ONLY valid JSON.\nDo not include markdown, explanations, or additional text.\n\nSupported transaction types:\n* expenses\n* income\n* transfer\n* savings\n\nExtract the following fields:\n* type\n* amount\n* category\n* merchant\n* location\n* from_account\n* to_account\n* savings_name\n* date\n* notes\n\nRules:\n* Only extract clauses where money actually moved (spent, received, transferred, put into savings).\n* IGNORE clauses that create, rename, change or delete a budget, account or savings goal (e.g. \"buat budget healthcare 300rb\", \"tambah saldo BCA 1jt\", \"ubah limit food\", \"hapus akun OVO\", \"target rumah 200jt\"). Those are handled by another system and are NOT transactions, even though they contain an amount.\n* Convert shorthand:\n  * rb / ribu / k = thousand (1.000)\n  * jt / juta = million (1.000.000)\n  * M / miliar / milyar = billion (1.000.000.000). In Indonesian, \"1M\" means one billion rupiah, not one million.\n  * T / triliun = trillion (1.000.000.000.000). Always return the real number, even if it is huge; the app validates the limit.\n* Normalize all amounts into integer Rupiah.\n* Detect multiple transactions if present.\n* Infer category intelligently.\n* Use null for missing information.\n* Never invent values.\n\nAccount and savings name rules (very important):\n* from_account, to_account and savings_name must be copied from words the user actually wrote in THIS message.\n* The Financial Data is only for matching spelling (e.g. \"bca\" -> \"BCA\"). NEVER pick an account or savings goal from it because it looks likely, has the most balance, or is cash. If the user did not write an account, from_account/to_account = null. If the user did not write a savings goal, savings_name = null.\n* If one account is written once at the end of a message that lists several transactions (e.g. \"makan 40rb dan parkir 10rb pakai BCA\"), use that account for every transaction in the message.\n\nTransaction Type Rules:\n\nExpense:\n* from_account = payment source.\n* to_account = null.\n* category: first decide the category by WHAT WAS BOUGHT, using the Category guide (given in a separate message) (keys: food, transport, shopping, bills, health_and_fitness, entertainment, education, personal_care, home, travel, subscriptions, gifts_and_donations, pets, other).\n  Then look at the budgets in the Financial Data: if one of the user's budgets clearly belongs to that category (e.g. a budget named \"Fashion\" or \"Belanja\" for shopping, \"Makan\" for food), return THAT budget's name exactly as written in the Financial Data.\n  If no budget belongs to that category, return the category key itself. Never place an item in a budget of a different category (a gym is not entertainment).\n* notes = short phrase of what was bought, in the user's own words (e.g. \"member gym\", \"ngopi\", \"lego\"). Always fill it for expenses.\n\nIncome:\n* to_account = account receiving the income.\n* from_account = null.\n* category should represent income source.\n\nTransfer:\n* from_account = source account.\n* to_account = destination account.\n* category = null.\n\nSavings:\n* from_account = source account if mentioned.\n* to_account = null.\n* savings_name = savings goal if explicitly mentioned.\n* category = null.\n\nDate Rules:\n* Return date only when explicitly provided.\n* If date is missing, relative, incomplete, or ambiguous, return null.\n* Never guess dates.\n* Format valid dates as YYYY-MM-DD HH:mm:ss.\n\nIncome Category Rules:\n* If the income source is explicitly mentioned, infer the appropriate category.\n  Examples:\n  * gaji → salary\n  * bonus → bonus\n  * freelance → freelance\n  * komisi → commission\n  * dividen → dividend\n  * bunga deposito → interest\n  * hadiah → gift\n  * untung / cuan / profit / capital gain from saham, reksadana, crypto, trading or \"investasi\" → investment\n  * jual <barang> / hasil penjualan → sales\n  * refund / cashback / pengembalian → refund\n  * uang saku / uang jajan / pocket money → allowance\n* NEVER use \"salary\" unless the user wrote gaji / salary / payroll.\n* If the income source cannot be determined, return null for category. Do not guess.\n\nOutput Format:\n{\n\"transactions\": [\n{\n\"type\": \"expenses|income|transfer|savings\",\n\"amount\": 0,\n\"category\": null,\n\"merchant\": null,\n\"location\": null,\n\"from_account\": null,\n\"to_account\": null,\n\"savings_name\": null,\n\"date\": null,\n\"notes\": null\n}\n]\n}\n"
+            },
+            {
+              "content": "={{ $('Data Input').item.json.message }}"
+            },
+            {
+              "content": "=Financial Data:\n{{ JSON.stringify($json) }}"
+            },
+            {
+              "role": "system",
+              "content": "=Category guide (choose by what was bought):\n* food: meals, drinks, coffee, snacks, groceries, food delivery\n* transport: fuel, parking, tolls, ride-hailing, public transport, vehicle service\n* shopping: clothes, shoes, bags, electronics, gadgets, online shopping\n* bills: electricity, water, internet, phone credit, insurance, installments, taxes\n* health_and_fitness: gym, sports, doctor, medicine, vitamins, glasses\n* entertainment: movies, games, concerts, hobbies, toys, leisure activities\n* education: books, courses, school fees, stationery\n* personal_care: skincare, salon, haircut, spa\n* home: rent, furniture, laundry, gas, repairs\n* travel: hotels, flights, vacations\n* subscriptions: streaming, apps, cloud storage\n* gifts_and_donations: gifts, charity, zakat, wedding envelopes\n* pets: pet food, vet\n* other: only when truly nothing fits\nIf an item sits between two categories, choose the one that matches its main purpose.\nDo not use \"other\" just because you are unsure."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        37120,
+        12432
+      ],
+      "id": "2cec6455-0989-4322-84d6-28aff19b297f",
+      "name": "Parse Transaction",
+      "credentials": {
+        "openAiApi": {
+          "id": "par9BHbBzTQ7a8BV",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT finance_snapshot() AS snapshot;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        36896,
+        15680
+      ],
+      "id": "c689654d-88e0-43aa-b705-235888c98c28",
+      "name": "Get Finance Snapshot",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ALLOWED = ['record_transaction', 'financial_setup', 'financial_insight'];\n\n// 1. Read the answer text from the OpenAI output structure, without fixed indexes\nfunction readText(data) {\n  const out = Array.isArray(data.output) ? data.output : [];\n  for (const item of out) {\n    for (const c of (item.content || [])) {\n      if (typeof c.text === 'string') return c.text;\n    }\n  }\n  return '';\n}\n\n// 2. Strip markdown fences if the model added them\nlet raw = readText($json).trim();\nraw = raw.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n\n// 3. Parse safely: on failure, treat as no intent\nlet intents = [];\ntry {\n  const parsed = JSON.parse(raw);\n  const list = Array.isArray(parsed) ? parsed : parsed.intents;\n  if (Array.isArray(list)) intents = list;\n} catch (e) {\n  intents = [];\n}\n\n// 4. Keep only known intents, drop duplicates\nintents = [...new Set(intents.filter(i => ALLOWED.includes(i)))];\n\n// 5. Safety net: financial_setup next to record_transaction must be backed by real setup wording in the message\n//    (a management verb, a setup field, or a clause that starts with budget/akun/savings/target).\n//    \"makan bakso 25rb pakai BCA tanggal 20 oktober\" mentions an account but is only a transaction.\nconst msg = String($('Data Input').first().json.message || '').toLowerCase();\nconst SETUP_HINT = /\\b(buat|bikin|create|add|tambah|tambahin|kurangi|naikkan|naikin|turunkan|turunin|increase|decrease|deduct|set|atur|ubah|ganti|update|change|edit|rename|hapus|delete|remove|target|limit|deadline|saldo awal|tipe|nama akun)\\b|(^|[,;.]|\\bdan\\b|\\bterus\\b|\\blalu\\b)\\s*(budget|akun|account|rekening|savings|target)\\b/;\nif (intents.includes('record_transaction') && intents.includes('financial_setup') && !SETUP_HINT.test(msg)) {\n  intents = intents.filter(i => i !== 'financial_setup');\n}\n\n// 6. Hypothetical questions (\"kalau aku beli laptop 15jt, budgetku aman?\") are insight only. Nothing is recorded or changed.\n//    Drop record_transaction / financial_setup when EVERY clause that holds an amount is phrased as \"kalau / what if\".\nif (intents.includes('financial_insight') && (intents.includes('record_transaction') || intents.includes('financial_setup'))) {\n  const HYPO = /\\b(kalau|kalo|jika|seandainya|andai|bagaimana jika|gimana kalau|gimana kalo|what if|if i)\\b/;\n  const AMOUNT = /\\d[\\d.,]*\\s*(rb|ribu|k|jt|juta|m)?\\b/;\n  const clauses = msg.split(/[,;.?!]|\\bdan\\b|\\bterus\\b|\\blalu\\b/).filter(c => AMOUNT.test(c));\n  if (clauses.length > 0 && clauses.every(c => HYPO.test(c))) {\n    intents = intents.filter(i => i === 'financial_insight');\n  }\n}\n\nreturn [{ json: { intents, raw_output: raw } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        34400,
+        14720
+      ],
+      "id": "815afccf-1c08-49ce-a3cb-eab1bdf2fdcf",
+      "name": "Extract Intents"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "record_transaction",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "68ccfd0f-5b0c-4df2-9cc8-886e426a7d70"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Transaction"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ec4bf58d-e062-4cd6-ab2a-2b31ba6d0574",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "financial_setup",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Setup"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "929823d2-1f7d-4aa3-829d-02c7e7306382",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "financial_insight",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Insights"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "9abb4de4-b023-4657-bf40-62710fb5ee2e",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "unmatched",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Unmatched"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        34848,
+        14688
+      ],
+      "id": "938cdacd-a04c-41d0-b04e-e6d46d3eb500",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "const intents = $json.intents || [];\n\nif (intents.length === 0) {\n  return [\n    {\n      json: {\n        intent: \"unmatched\"\n      }\n    }\n  ];\n}\n\nreturn intents.map(intent => ({\n  json: {\n    intent: intent\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        34624,
+        14720
+      ],
+      "id": "c952b5e3-c4c6-4242-9f90-ef8ff3e07c24",
+      "name": "Split Out Intents"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You classify messages for a personal finance assistant on Telegram.\nUsers write in Indonesian, English, or both, in casual style (rb = ribu, jt = juta, k = thousand).\n\nReturn ONLY JSON in this shape: {\"intents\": [...]}\nAllowed values: record_transaction, financial_setup, financial_insight.\nJudge each clause of the message separately. List each intent once, in order of appearance.\nIf no clause is about the user's finances, return {\"intents\": []}.\n\nCore principle:\n- financial_setup changes the definition of a budget, account, or savings goal: create it, rename it, change its limit, target, balance, type or deadline, or delete it.\n- record_transaction records money that actually moved: spent, received, transferred, or put into savings.\n- financial_insight asks for information or advice and changes nothing.\n\nDecide per clause, in this order:\n\n1. financial_insight\nSignals: a question mark; berapa, apa, gimana, bagaimana, kapan, mana; tampilkan, lihat, show, list, get; ringkasan, summary, laporan, analisis, report, trend; sisa, remaining, left; saran, rekomendasi, sebaiknya, advice; aman ga, cukup ga; kalau, seandainya, what if (hypothetical).\nA question or a hypothetical is always insight, even if it contains an amount or the word budget.\n\n2. financial_setup\nNeeds BOTH:\n(a) a managed object: budget, limit, kategori, akun, account, rekening, wallet, dompet, savings goal, tabungan (as a goal), goal, target, etc.\n(b) a management verb or setup field: buat, bikin, create, add, tambah, tambahin, kurangi, naikkan, turunkan, increase, add, decrease, deduct, set, atur, ubah, ganti, update, change, edit, rename, hapus, delete, remove; or the fields target, limit, deadline, saldo awal, tipe akun, nama akun, etc.\nAdjusting the stored balance of a named account (\"tambah saldo\", \"kurangi saldo\", \"set saldo\") is setup.\n\n3. record_transaction\nMoney that moved. Needs an amount and one of:\n- spending: beli, bayar, makan, minum, jajan, belanja, isi, langganan, ongkos, bought, paid, spent, purchase, etc\n- income: gaji, bonus, komisi, freelance, dapat, terima, masuk, income, salary, received, etc\n- transfer: transfer, kirim, pindah, top up, send, move, etc\n- saving: tabung, nabung, menabung, setor, save, deposit, etc\nA clause that is only an item and an amount, with no managed object, is spending.\n\nTie-breakers:\n- The object decides, not the verb. \"tambah\" with a budget, account, or savings goal is setup. \"tabung\", \"nabung\", and \"setor\" with an amount are transactions, even if a savings goal name is mentioned.\n- \"buat\" or \"bikin\" with savings, akun/account, or budget is setup (creating something). Saving money into a goal is never setup.\n- A clause that starts with a managed object word (budget, akun, savings, target) followed by a name and an amount is setup, even without a verb.\n- The words target, limit, deadline, saldo awal, and tipe always make a clause setup.\n\n- Naming the account that paid or received (\"pakai BCA\", \"dari BCA\", \"via GoPay\", \"ke BCA\") or giving a date (\"tanggal 20 oktober\") is only a detail of a transaction. It never makes the clause setup. Setup needs a management verb or setup field from rule 2(b).\n\n## Not a finance request\nExamples that return {\"intents\": []}:\n- halo\n- makasih ya\n- cuaca hari ini gimana?\n\n## Examples\n\nInput: makan sushi 120rb\nOutput: {\"intents\": [\"record_transaction\"]}\n\nInput: lunch 50k\nOutput: {\"intents\": [\"record_transaction\"]}\n\nInput: tabung 2jt\nOutput: {\"intents\": [\"record_transaction\"]}\n\nInput: tambah budget makan 500rb\nOutput: {\"intents\": [\"financial_setup\"]}\n\nInput: pengeluaran bulan ini berapa?\nOutput: {\"intents\": [\"financial_insight\"]}\n\nInput: get all data\nOutput: {\"intents\": [\"financial_insight\"]}\n\nInput: halo\nOutput: {\"intents\": []}\n\nInput: gaji masuk 10jt terus tambahin budget makan 500rb\nOutput: {\"intents\": [\"record_transaction\", \"financial_setup\"]}\n\nInput: buat savings liburan target 20jt, terus tabung 1jt\nOutput: {\"intents\": [\"financial_setup\", \"record_transaction\"]}\n\nInput: beli coffee 45k, sisa budget makan berapa?\nOutput: {\"intents\": [\"record_transaction\", \"financial_insight\"]}"
+            },
+            {
+              "content": "={{ $json.message }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        34048,
+        14720
+      ],
+      "id": "0b1667fd-5fa7-4887-b8bb-82e697f5b97b",
+      "name": "AI Intent Router",
+      "credentials": {
+        "openAiApi": {
+          "id": "par9BHbBzTQ7a8BV",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "38c563de-1c94-4d06-9340-30fa1b345bcc",
+              "name": "=response",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        38048,
+        12832
+      ],
+      "id": "0c6f2214-73fc-4b58-be70-241c0207465a",
+      "name": "Budget Update Response"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6952ad86-dc7c-4631-831e-166c4d50429a",
+              "name": "message",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        33824,
+        14720
+      ],
+      "id": "7a6acc06-709b-4148-b464-88d1deefca19",
+      "name": "Data Input"
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "userIds": "YOUR_TELEGRAM_USER_ID"
+        }
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        33600,
+        14720
+      ],
+      "id": "43b6ccea-48f7-4ffa-95ee-b2205b13d315",
+      "name": "Telegram Trigger",
+      "webhookId": "402feeb8-1126-4c0c-a037-0eb9b1f73b2f",
+      "credentials": {
+        "telegramApi": {
+          "id": "hLoCwuqxFZPrCHEN",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "={{ String($json.response).replace(/([_*`\\[])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        38496,
+        13728
+      ],
+      "id": "25370162-fb28-4e4f-bb1f-0ddcae3a85ee",
+      "name": "Send a text message",
+      "webhookId": "e314f684-8118-4972-b2a5-024de7e5dae8",
+      "credentials": {
+        "telegramApi": {
+          "id": "hLoCwuqxFZPrCHEN",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "=You are a smart personal finance assistant on Telegram.\n\nAnswer the user's question using the Financial Snapshot and, above all, the Facts.\n\n## Numbers\n- Facts are already calculated and are the authoritative source. Never calculate, estimate or round numbers yourself.\n- Use only numbers that appear in Facts or in the Snapshot. If a needed number is missing, say what is missing.\n- Copy account, budget and savings names exactly as written (Food stays Food, do not translate).\n- Terms (see Facts.glossary): \"sisa uang\", \"uang tersisa\", \"saldo\", \"uang di tangan\" = liquid_total. \"uang yang belum dialokasikan\" = unallocated_money. These are different numbers; never mix them up and never invent a third one. If the user asks for \"sisa uang\", answer with liquid_total and add one short line that unallocated_money is what is still free after budgets.\n- Never claim anything was recorded or changed. For a hypothetical purchase, say it is only a simulation.\n\n## Detail and list requests\n- If the user asks to list or detail transactions (rincikan, daftar, riwayat, setiap pemasukan/pengeluaran), write only a short intro with the totals. The app prints the full transaction list from the database below your text; never type the list yourself.\n- For questions about specific transactions (largest expense, which category is biggest, recent activity) use Facts.largest_expenses_this_month, spending_by_category_this_month and recent_transactions.\n\n## Breakdown requests\n- If the user asks for the breakdown, how it is calculated, or proof (rincian, perhitungan, cara menghitung), keep your answer short and say the calculation is shown below the answer. The app appends the verified breakdown itself; do not write your own arithmetic.\n\n## Fit the answer to the question\n- Answer what was actually asked, first. Different questions need different answers:\n  - \"What budgets do I have?\" -> list them briefly, no purchase advice.\n  - \"Am I safe if I buy X?\" -> give the verdict first, using Facts.what_if (fits_in_unallocated, fits_in_liquid, unallocated_after, shortfall). Mention which budget would normally cover X (or that none exists), and what to do (wait, save first, create or raise a budget, use a different account).\n  - \"Is my budget safe until month end?\" -> use each budget's status, remaining, projected_end_of_month and projected_to_exceed.\n  - Savings questions -> use current, target, percent, target_date, needed_per_month. Priority questions consider deadlines and monthly needs, not only the size of the target.\n- A budget over its limit is not automatically a problem: the money already left the account. It is only serious if unallocated_is_negative is true. Never call an over-limit budget \"aman\"; say it exceeded its limit, and separately whether the overall money is still safe.\n- Over-limit advice: when a budget is over its limit and unallocated_money is positive, the overspend is already covered by free money. If unallocated_is_negative is true, say clearly that the situation needs action.\n- Show only what is relevant. Do not list all data unless the user asks for everything (\"get all data\", \"cek semua data\", \"ringkasan\").\n- Recommendations: give 0 to 3 short, concrete options. Use an empty list [] when the question is a plain factual lookup (an amount, a list) and nothing needs action. Otherwise give only as many as are actually useful for THIS question and these numbers. Use your own judgment about what the user could sensibly do. Ideas, not a checklist: raise a budget limit (offer the command, e.g. \"naikkan budget Food 60rb\"); record a one-off expense under a catch-all budget such as Facts.other_budget (or create \"Other\" if it is null); move spending to another account; wait or save first; create a budget that is missing; leave it as is when nothing is wrong. Do not repeat the same idea twice and do not pad the list.\n\n## Output format\nReturn ONLY valid JSON, no markdown fences, in exactly this shape:\n{\n  \"emoji\": \"one emoji that fits the topic (📊 budget, 🎯 savings, 🏦 accounts, 💰 money, 🛒 purchase, 📈 trend)\",\n  \"title\": \"2-4 word heading, no emoji, no punctuation\",\n  \"answer\": \"1-3 short sentences that directly answer the question, with the key numbers\",\n  \"points\": [\"optional short supporting lines, maximum 5, each under 15 words\"],\n  \"recommendations\": [\"0 to 3 concrete recommendations that fit this question, each one short sentence\"]\n}\n- Every field is plain text. Never use markdown symbols (no *, **, #, backticks, underscores for emphasis). The app formats the message itself.\n- Bahasa Indonesia, natural and conversational. Address the user as \"kamu\" (never \"Anda\"). Use the word \"budget\", not \"anggaran\", and avoid jargon such as \"likuid\" (say \"uang di tangan\").\n- Keep it short: answer under 50 words, points optional.\n- Rupiah format: Rp1.250.000.\n- Use \"points\" for lists (budgets, savings goals, accounts); leave it as [] when the answer is a single statement.\n"
+            },
+            {
+              "content": "=User Message:\n{{ $('Data Input').item.json.message }}\n\nDetected Insight Intent:\n{{ $('Extract Insight Intent').item.json.insight_type }}\n\nFacts (already calculated):\n{{ JSON.stringify($json.facts) }}\n\nFinancial Snapshot:\n{{ JSON.stringify($json.snapshot) }}\n\nAnswer the user's question according to the system instructions."
+            },
+            {
+              "role": "assistant",
+              "content": "=## Output example (JSON only)\n\n{\"emoji\":\"🛒\",\"title\":\"Simulasi beli laptop\",\"answer\":\"Belum aman. Laptop Rp15.000.000 melebihi uang di tangan Rp13.955.000 dan uang belum dialokasikan Rp13.315.000.\",\"points\":[\"Kurang Rp1.685.000 dari uang belum dialokasikan\",\"Belum ada budget untuk belanja elektronik\"],\"recommendations\":[\"Tunda pembelian atau kumpulkan dulu sekitar Rp1.700.000.\",\"Buat budget khusus laptop setelah dana cukup.\"]}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        37696,
+        15680
+      ],
+      "id": "9b3f55dc-1cc4-4f9b-beca-41b41d18c01b",
+      "name": "Generate Analytics",
+      "credentials": {
+        "openAiApi": {
+          "id": "par9BHbBzTQ7a8BV",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const setupItems = $(\"Check Validation (B)\")\n  .all()\n  .filter(i => i.json.valid_status === \"valid\");\nconst rows = $(\"Merge (B)\").all().map(i => i.json);\n\nconst rp = (n) => \"Rp\" + new Intl.NumberFormat(\"id-ID\").format(Number(n ?? 0));\nconst same = (a, b) => a != null && b != null && String(a).toLowerCase() === String(b).toLowerCase();\n\nconst out = [];\nfor (const item of setupItems) {\n  const data = item.json;\n  const action = data.action;\n\n  // cocokkan lewat nama (bukan urutan), supaya item yang ditolak tidak menggeser yang lain\n  const b = rows.find(r => same(r.old_category ?? r.category, data.name) || same(r.category, data.name));\n  if (!b) continue; // ditolak validasi: node warning sudah membalas\n\n  const lines = [];\n\n  if (action === \"create\") {\n    lines.push(\"✅ Budget dibuat\", \"\");\n    lines.push(`📂 Category: ${b.category}`);\n    lines.push(`💰 Limit: ${rp(b.limit_amount)}`);\n\n  } else if (action === \"increase\" || action === \"decrease\") {\n    const up = action === \"increase\";\n    const delta = Number(data.amount ?? 0);\n    const newLimit = Number(b.limit_amount);\n    const oldLimit = up ? newLimit - delta : newLimit + delta;\n\n    lines.push(up ? \"✅ Budget dinaikkan\" : \"✅ Budget diturunkan\", \"\");\n    lines.push(`📂 Category: ${b.category}`);\n    lines.push(`💰 Limit: ${rp(oldLimit)} ➜ ${rp(newLimit)} (${up ? \"+\" : \"-\"}${rp(delta)})`);\n\n  } else if (action === \"update\") {\n    const oldName = b.old_category ?? data.name;\n    const oldLimit = Number(b.old_limit_amount ?? b.limit_amount);\n    const newLimit = Number(b.limit_amount);\n    const nameChanged = oldName !== b.category;\n    const limitChanged = oldLimit !== newLimit;\n\n    // perubahan relatif (naikkan/kurangi) yang dilipat ke update ini\n    const delta = Number(data.amount_delta ?? 0);\n    const showDelta = delta !== 0 && data.new_amount == null;\n    const deltaText = showDelta ? ` (${delta > 0 ? \"+\" : \"-\"}${rp(Math.abs(delta))})` : \"\";\n\n    lines.push(\"✅ Budget diperbarui\", \"\");\n    lines.push(`📂 Category: ${nameChanged ? `${oldName} ➜ ${b.category}` : b.category}`);\n    lines.push(`💰 Limit: ${limitChanged ? `${rp(oldLimit)} ➜ ${rp(newLimit)}${deltaText}` : rp(newLimit)}`);\n    if (!nameChanged && !limitChanged) {\n      lines.push(\"\", \"ℹ️ Datanya sama dengan sebelumnya, tidak ada yang berubah.\");\n    }\n\n  } else if (action === \"delete\") {\n    lines.push(\"🗑️ Budget dihapus\", \"\");\n    lines.push(`📂 Category: ${b.category}`);\n    lines.push(`💰 Limit terakhir: ${rp(b.limit_amount)}`);\n\n  } else {\n    lines.push(\"✅ Selesai\");\n  }\n\n  out.push({ json: { action, message: lines.join(\"\\n\") } });\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        37760,
+        12832
+      ],
+      "id": "f6f61c5f-52c6-400f-b54d-d22da5ca73c0",
+      "name": "Budget Formatter"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  ( SELECT json_agg(b)\n  FROM(\n    SELECT\n      category, limit_amount\n      FROM budgets) b\n    ) AS budgets,\n  \n  ( SELECT json_agg(a)\n  FROM(\n    SELECT \n      account_name, account_type, balance\n      FROM accounts) a\n    ) AS accounts,\n  \n  ( SELECT json_agg(s)\n  FROM(\n    SELECT\n      savings_name, target_amount, current_amount, target_date\n      FROM savings) s\n    ) AS savings;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        36896,
+        12432
+      ],
+      "id": "101b8061-9603-4047-b3e1-6d1e93e84a53",
+      "name": "Get All Data",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "=You are an AI financial setup parser. Today's date is {{ $now.format('yyyy-MM-dd') }}.\n\nExtract these fields:\nentity, action, name, amount, target_date, acc_type, new_name, new_amount, new_target_date, new_acc_type\n\nEntities: budget, savings, account\nActions: create, update, increase, decrease, delete\n\nGeneral rules:\n- Extract ONLY clauses that manage the object itself (create, rename, change limit/target/deadline/type/balance, delete).\n- IGNORE clauses that describe money that actually moved, because another system records them: spending (beli, bayar, makan), income (gaji masuk, dapat, terima, bonus), transfers, and putting money into savings (tabung, nabung, setor). \"gaji masuk 2jt ke BCA\" is income, NOT an increase of the BCA account. An account balance is changed here only when the user explicitly says so (e.g. \"tambah saldo BCA 500rb\", \"set saldo BCA 2jt\").\n- Return ONLY valid JSON. No markdown, no explanations.\n- If several setup actions are requested, return a JSON array with one full object per action.\n- Never invent missing values. Use null for any field that does not apply.\n- Preserve names exactly as the user wrote them (casing and language). Do not translate names.\n- name and new_name contain ONLY the object's own name. The word that tells the type (budget, kategori, category, savings, tabungan, goal, akun, account, rekening) sets `entity` and must NOT be part of the name. Also exclude action words (ubah, hapus, naikkan, ...) and field words (deadline, target, limit, saldo, tipe).\n- If only the capitalization of a name changes, treat it as a rename.\n- Amounts are integer Rupiah: rb/ribu/k = thousand, jt/juta = million. \"1,5jt\" = 1500000. \"1.500.000\" = 1500000.\n\nEntity keywords:\n- budget: budget, kategori, category, limit, batas pengeluaran\n- savings: savings, tabungan, goal, target tabungan\n- account: akun, account, rekening, bank, wallet, dompet, e-wallet\n- \"target\" with a goal name and no other object = savings\n\nAction keywords:\n- create: buat, bikin, tambah baru, create, new\n- increase: tambah, tambahin, naikkan, naikin, increase, add (to an existing object)\n- decrease: kurangi, turunkan, kurangin, decrease, reduce\n- update: ubah, ganti, set, jadi, rename, update, change\n- delete: hapus, buang, delete, remove\n- \"tambah <object> <name> <amount>\" is increase on an existing object, not create.\n- A clause with no action word that starts with a field word (target, limit, deadline, saldo, tipe) followed by an object name and a value is an update of that field (new_amount, new_target_date, new_acc_type), not a create.\n\nFields by action:\n- create: name = new object name; amount = initial balance, limit, or target; target_date = deadline if stated; acc_type = account type if stated; all new_* = null.\n- increase / decrease: name = existing object; amount = the change; every other field = null.\n- update: name = existing object; amount, target_date, acc_type = null; fill only the new_* fields the user changes (new_name, new_amount, new_target_date, new_acc_type); unchanged new_* = null.\n- delete: name = object being deleted; every other field = null.\n\nAccount types: normalize to one of cash, bank, credit_card, e-wallet, loan, other. If the user's type matches none of them, return it as written.\n\nDate rules:\n- create (target_date): output YYYY-MM-DD. Year only (\"2028\") = December 31 of that year; month and year (\"juni 2028\") = last day of that month.\n- update (new_target_date): output ONLY what the user stated, so the existing deadline keeps its other parts. Year only (\"2028\") -> \"2028\"; month and year (\"juni 2028\") -> \"2028-06\"; full date -> \"YYYY-MM-DD\".\n- Full date: use it exactly as stated. Day and month without year: the next upcoming occurrence from today.\n- Relative (\"tahun depan\", \"6 bulan lagi\"): resolve from today, then apply the rules above for the field.\n- Never fix or adjust a date yourself. If the user writes a date that does not exist (for example 31 Februari 2027), output it exactly as written (2027-02-31). The system validates dates and tells the user.\n- No date stated: null.\n- Use target_date for create and new_target_date for update.\n\nOutput format (one object, or an array of these):\n{\n  \"entity\": null,\n  \"action\": null,\n  \"name\": null,\n  \"amount\": null,\n  \"target_date\": null,\n  \"acc_type\": null,\n  \"new_name\": null,\n  \"new_amount\": null,\n  \"new_target_date\": null,\n  \"new_acc_type\": null\n}"
+            },
+            {
+              "content": "={{ $('Data Input').item.json.message }}"
+            }
+          ]
+        },
+        "builtInTools": {
+          "codeInterpreter": false
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        35072,
+        14624
+      ],
+      "id": "911714db-52f5-452c-8bed-c1600e5ad5a5",
+      "name": "Parse Financial Setup",
+      "credentials": {
+        "openAiApi": {
+          "id": "par9BHbBzTQ7a8BV",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output?.[0]?.content?.[0]?.text ?? '';\nconst text = String(raw).replace(/^```(?:json)?\\s*/i, '').replace(/```\\s*$/, '').trim();\n\nlet parsed;\ntry { parsed = JSON.parse(text); } catch (e) { parsed = null; }\n\nconst list = (Array.isArray(parsed) ? parsed : [parsed]).filter(x => x && typeof x === 'object');\n\n// If parsing fails or returns an empty result, route to the fallback path so the user still receives a response\nif (list.length === 0) {\n  return [{ json: { entity: null, action: null, name: null, raw_output: text } }];\n}\n// Safety net: an account increase/decrease needs real adjustment wording in the message.\n// \"gaji masuk 2jt ke BCA\" is income (recorded elsewhere), not a change of the BCA balance.\nconst msg = String($('Data Input').first().json.message || '').toLowerCase();\nconst ADJUST_WORD = /\\b(saldo|balance|tambah|tambahin|kurangi|kurangin|naikkan|naikin|turunkan|turunin|increase|decrease|add|reduce|deduct)\\b/;\nconst kept = list.filter(it => !(String(it.entity).toLowerCase() === 'account'\n  && ['increase', 'decrease'].includes(String(it.action).toLowerCase()) && !ADJUST_WORD.test(msg)));\nif (kept.length === 0) {\n  return [{ json: { entity: null, action: null, name: null, raw_output: text, ignored_as_transaction: true } }];\n}\nreturn kept.map(item => ({ json: item }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        35424,
+        14624
+      ],
+      "id": "bc4005f6-027c-4c8d-8067-034a8eafe933",
+      "name": "Extract Financial Setup"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.entity }}",
+                    "rightValue": "budget",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "96c52196-78b1-41cd-92cd-660126b198ab"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "BUDGET"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "dac24d54-b51c-4c12-b595-c5ec9c45c938",
+                    "leftValue": "={{ $json.entity }}",
+                    "rightValue": "savings",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SAVINGS"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "247e199e-9c0b-4b5e-9f25-5437cbc33de8",
+                    "leftValue": "={{ $json.entity }}",
+                    "rightValue": "account",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ACCOUNT"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        35872,
+        14592
+      ],
+      "id": "d02aed82-fe62-495e-b82f-ec7757692dfd",
+      "name": "Check Entities"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "99c73594-2319-4d41-90e0-8dbac722aabb",
+              "leftValue": "={{ $json.valid_status }}",
+              "rightValue": "valid",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        36672,
+        13040
+      ],
+      "id": "dc3897ee-d389-4651-af7f-bea3eb98c3e8",
+      "name": "If Valid (B)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const BULK = /\\b(semua|semuanya|seluruh|segala|all|every|everything)\\b/i;\n// a name that is only a type word (\"savings\", \"budget\", \"akun\") means the parser dropped \"semua\"\nconst TYPE_ONLY = /^(budgets?|kategori|categor(?:y|ies)|savings?|tabungan|goals?|akun|akun-akun|accounts?|rekening)$/i;\nlet rawMessage = '';\ntry { rawMessage = String($('Data Input').first().json.message ?? ''); } catch (err) { rawMessage = ''; }\nconst clauseFor = (name) => {\n  const n = String(name ?? '').toLowerCase();\n  const parts = rawMessage.split(/[,;\\n]|\\s+(?:dan|lalu|terus|kemudian|and|then)\\s+/i);\n  return parts.find(p => n && p.toLowerCase().includes(n)) ?? rawMessage;\n};\nconst isEmpty = (v) => v == null || v === 'null' || v === '';\n\nconst existenceItems = $input.all();\nconst entityItems = $('Check Entities').all();\n\nreturn existenceItems.map((item, index) => {\n  const e = entityItems[index].json;\n  const a = e.action;\n  const exists = item.json.category_exists;\n  const nameStr = isEmpty(e.name) ? '' : String(e.name).trim();\n\n  // value after the change; a change that would push it below 0 is rejected\n  const cur = item.json.current_amount == null ? null : Number(item.json.current_amount);\n  let nextAmount = null;\n  if (cur !== null && (a === 'increase' || a === 'decrease') && !isEmpty(e.amount)) {\n    nextAmount = cur + (a === 'decrease' ? -1 : 1) * Number(e.amount);\n  } else if (cur !== null && a === 'update' && (!isEmpty(e.new_amount) || !isEmpty(e.amount_delta))) {\n    nextAmount = (isEmpty(e.new_amount) ? cur : Number(e.new_amount)) + (Number(e.amount_delta) || 0);\n  }\n\n\n  let reason = null;\n  if (a === 'create') {\n    if (isEmpty(e.name) || isEmpty(e.amount) || Number(e.amount) <= 0) reason = 'incomplete';\n    else if (exists) reason = 'duplicate';\n  } else if (isEmpty(e.name)) {\n    reason = a === 'delete' ? 'bulk_delete' : 'name_required';\n  } else if (a === 'delete' && !exists && (BULK.test(nameStr) || TYPE_ONLY.test(nameStr) || BULK.test(clauseFor(nameStr)))) {\n    reason = 'bulk_delete';\n  } else if (!exists) {\n    reason = 'not_found';\n  } else if ((a === 'increase' || a === 'decrease') && isEmpty(e.amount)) {\n    reason = 'amount_required';\n  } else if (nextAmount !== null && nextAmount < 0) {\n    reason = 'below_zero';\n  } else if (a === 'update' && isEmpty(e.new_name) && isEmpty(e.new_amount) && isEmpty(e.amount_delta)) {\n    reason = 'nothing_to_update';\n  } else if (a === 'update' && item.json.new_name_taken) {\n    reason = 'duplicate_new';\n  }\n\n  return {\n    json: {\n      ...e, ...item.json,\n      valid_status: reason ? 'invalid' : 'valid',\n      invalid_reason: reason\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        36384,
+        13040
+      ],
+      "id": "07522c66-8b24-4283-ae80-93bd85a38dd7",
+      "name": "Check Validation (B)"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "={{ (() => {\n  const list = $json.categories;\n  const rp = (n) => 'Rp' + new Intl.NumberFormat('id-ID').format(Number(n ?? 0));\n  const bad = $('Check Validation (B)').all().map(i => i.json).filter(j => j.valid_status === 'invalid');\n  if (!bad.length) return '⚠️ Perintah tidak bisa diproses.';\n\n  // exactly one rejected command: a short, specific message\n  const single = (j) => {\n    const nm = j.name;\n    switch (j.invalid_reason) {\n      case 'below_zero': return '⚠️ Limit budget \"' + nm + '\" tidak boleh di bawah Rp0. Limit saat ini ' + rp(j.current_amount) + ', pengurangan ' + rp(j.amount) + ' terlalu besar.\\n\\nContoh: \"kurangi budget ' + nm + ' ' + rp(Math.floor(Number(j.current_amount) / 2)).replace('Rp','').replace(/\\./g,'') + '\"';\n      case 'duplicate': return '⚠️ Budget \"' + nm + '\" sudah ada. Pakai nama lain, atau ubah budget yang sudah ada.\\n\\nBudget yang ada:\\n' + list + '\\n\\nContoh: \"set budget food jadi 600rb\"';\n      case 'duplicate_new': return '⚠️ Nama \"' + j.new_name + '\" sudah dipakai budget lain. Pilih nama yang berbeda.\\n\\nBudget yang ada:\\n' + list;\n      case 'incomplete': return '⚠️ Data budget belum lengkap. Sebutkan nama kategori dan limit.\\n\\nContoh: \"buat budget food 500rb\"';\n      case 'bulk_delete': return '⚠️ Penghapusan massal tidak didukung.\\n\\nDemi keamanan, budget dihapus satu per satu. Sebutkan namanya.\\n\\nBudget yang ada:\\n' + list + '\\n\\nContoh: \"hapus budget food\"';\n      case 'name_required': return '⚠️ Sebutkan nama budget yang ingin diubah.\\n\\nBudget yang ada:\\n' + list;\n      case 'amount_required': return '⚠️ Nominalnya belum disebutkan.\\n\\nContoh: \"tambah budget ' + (nm ?? 'food') + ' 100rb\"';\n      case 'nothing_to_update': return 'ℹ️ Tidak ada yang diubah. Sebutkan nama baru atau limit baru.\\n\\nContoh: \"set budget food jadi 600rb\"';\n      default: return '⚠️ Budget \"' + nm + '\" tidak ditemukan.\\n\\nBudget yang ada:\\n' + list + '\\n\\nUntuk membuat baru, tulis: \"buat budget food 500rb\"';\n    }\n  };\n\n  // several rejected commands: one combined message\n  const why = (j) => {\n    switch (j.invalid_reason) {\n      case 'below_zero': return 'hasil perubahan di bawah Rp0 (limit saat ini ' + rp(j.current_amount) + ')';\n      case 'duplicate': return 'nama sudah ada';\n      case 'duplicate_new': return 'nama baru \"' + j.new_name + '\" sudah dipakai budget lain';\n      case 'incomplete': return 'data belum lengkap (sebutkan nama dan limit)';\n      case 'bulk_delete': return 'penghapusan massal tidak didukung, sebutkan satu nama';\n      case 'name_required': return 'nama budget belum disebutkan';\n      case 'amount_required': return 'nominal belum disebutkan';\n      case 'nothing_to_update': return 'tidak ada yang diubah (sebutkan nama baru atau limit baru)';\n      default: return 'tidak ditemukan';\n    }\n  };\n\n  if (bad.length === 1) return single(bad[0]);\n\n  const hints = {\n    not_found: 'Untuk membuat baru, tulis: \"buat budget food 500rb\"',\n    duplicate: 'Contoh: \"set budget food jadi 600rb\"',\n    incomplete: 'Contoh: \"buat budget food 500rb\"',\n    bulk_delete: 'Contoh: \"hapus budget food\"',\n    amount_required: 'Contoh: \"tambah budget food 100rb\"',\n    nothing_to_update: 'Contoh: \"set budget food jadi 600rb\"'\n  };\n  const lines = bad.map(j => '• ' + (j.name ? '\"' + j.name + '\"' : '(tanpa nama)') + ': ' + why(j));\n  const hint = hints[bad[0].invalid_reason ?? 'not_found'] ?? '';\n  return '⚠️ Beberapa perintah tidak bisa diproses:\\n' + lines.join('\\n')\n    + '\\n\\nBudget yang ada:\\n' + list\n    + (hint ? '\\n\\n' + hint : '');\n})() }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        37472,
+        13424
+      ],
+      "id": "46db13b0-20d6-4853-a6ef-f02311e7a151",
+      "name": "Invalid Action Warning (B)",
+      "webhookId": "b0e98f4f-26f5-45f6-8dc8-2e1a741980e5",
+      "credentials": {
+        "telegramApi": {
+          "id": "hLoCwuqxFZPrCHEN",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT category\nFROM budgets\nORDER BY category;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        36896,
+        13424
+      ],
+      "id": "e3934269-9e46-4764-a0b6-1d8c6855b708",
+      "name": "Get Budget Category (S)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO budgets(category, limit_amount)\nVALUES (\n  '{{ $json.name }}',\n  {{ $json.amount }}\n)\n  RETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        12640
+      ],
+      "id": "2d4f9d93-ac5c-4cc4-8117-9f8006dd6143",
+      "name": "Create (B)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM budgets\nWHERE LOWER(category) = LOWER('{{ $json.name }}')\n  RETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        13216
+      ],
+      "id": "aa8d0fae-a07c-4c3a-9279-e436e9837d7a",
+      "name": "Delete (B)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "46d33d85-ebb1-440a-9eaa-b186c58d449f",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "create",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CREATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "70264e53-d062-4763-9426-18e366416649",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "=^(increase|decrease)$",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ADJUST"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "3ba03294-5b91-429b-b0d2-63d620644db2",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "UPDATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "14f8174b-9832-4d94-bb2f-cdf8a7ddf31d",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "DELETE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        36896,
+        12896
+      ],
+      "id": "9d4ca117-3f4a-4996-b6bd-eee8eeeb68ab",
+      "name": "Check Action Type (B)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH old AS (\n  SELECT budget_id,\n         category     AS old_category,\n         limit_amount AS old_limit_amount\n  FROM budgets\n  WHERE LOWER(category) = LOWER('{{ $json.name }}')\n)\nUPDATE budgets b\nSET category     = COALESCE(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''), b.category),\n    limit_amount = COALESCE(NULLIF(NULLIF('{{ $json.new_amount }}', 'null'), '')::BIGINT, b.limit_amount)\n                + {{ Number($json.amount_delta) || 0 }},\n    updated_at   = NOW()\nFROM old\nWHERE b.budget_id = old.budget_id\nRETURNING b.*, old.old_category, old.old_limit_amount;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        13024
+      ],
+      "id": "2acdf70e-5ea7-4475-b68e-3c5a20ae3fa6",
+      "name": "Update (B)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  EXISTS (\n    SELECT 1 FROM budgets\n    WHERE LOWER(category) = LOWER('{{ $json.name }}')\n  ) AS category_exists,\n  EXISTS (\n    SELECT 1 FROM budgets\n    WHERE LOWER(category) = LOWER(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''))\n      AND LOWER(category) <> LOWER('{{ $json.name }}')\n  ) AS new_name_taken,\n  (SELECT limit_amount FROM budgets WHERE LOWER(category) = LOWER('{{ $json.name }}')) AS current_amount;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        36096,
+        13040
+      ],
+      "id": "08eb4c0a-38fb-4565-b987-0e6f2d67d542",
+      "name": "Check Existence (B)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  EXISTS (\n    SELECT 1 FROM savings\n    WHERE LOWER(savings_name) = LOWER('{{ $json.name }}')\n  ) AS category_exists,\n  -- fallback: the parser sometimes keeps the type word in the name (\"savings rumah\" -> \"rumah\")\n  REGEXP_REPLACE('{{ $json.name }}', '^(savings|saving|tabungan|goal)\\s+', '', 'i') AS stripped_name,\n  EXISTS (\n    SELECT 1 FROM savings\n    WHERE LOWER(savings_name) = LOWER(REGEXP_REPLACE('{{ $json.name }}', '^(savings|saving|tabungan|goal)\\s+', '', 'i'))\n  ) AS stripped_exists,\n  EXISTS (\n    SELECT 1 FROM savings\n    WHERE LOWER(savings_name) = LOWER(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''))\n      AND LOWER(savings_name) <> LOWER('{{ $json.name }}')\n      AND LOWER(savings_name) <> LOWER(REGEXP_REPLACE('{{ $json.name }}', '^(savings|saving|tabungan|goal)\\s+', '', 'i'))\n  ) AS new_name_taken,\n  (SELECT target_amount FROM savings WHERE LOWER(savings_name) IN (LOWER('{{ $json.name }}'), LOWER(REGEXP_REPLACE('{{ $json.name }}', '^(savings|saving|tabungan|goal)\\s+', '', 'i'))) LIMIT 1) AS current_amount;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        36096,
+        14032
+      ],
+      "id": "e0bc91c8-799d-465c-96a9-840816e2c72a",
+      "name": "Check Existence (S)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "⚠️ Perintahnya belum lengkap atau kurang jelas.\n\nSebutkan:\n• Apa yang diubah (budget, savings, atau akun)\n• Namanya\n• Nominal, kalau perlu\n\nContoh:\n\"buat budget food 500rb\"\n\"set budget gym jadi 300rb\"\n\"buat savings rumah target 200jt\"\n\"ubah nama akun BCA jadi BCA Utama\"",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        36096,
+        15536
+      ],
+      "id": "ecc503dc-19c9-4281-8873-09f1d9f33109",
+      "name": "Fallback Output (S)",
+      "webhookId": "7e3722fc-637f-417a-acb6-a4fc466bfabd",
+      "credentials": {
+        "telegramApi": {
+          "id": "hLoCwuqxFZPrCHEN",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const BULK = /\\b(semua|semuanya|seluruh|segala|all|every|everything)\\b/i;\n// a name that is only a type word (\"savings\", \"budget\", \"akun\") means the parser dropped \"semua\"\nconst TYPE_ONLY = /^(budgets?|kategori|categor(?:y|ies)|savings?|tabungan|goals?|akun|akun-akun|accounts?|rekening)$/i;\nconst isEmpty = (v) => v == null || v === 'null' || v === '';\n\n// \"create\" of a name that already exists, in a clause with no create word\n// (\"target cobacoba 500000\"), is almost certainly an update.\nconst CREATE_WORDS = /\\b(buat|bikin|buatkan|create|make)\\b/i;\nlet rawMessage = '';\ntry { rawMessage = String($('Data Input').first().json.message ?? ''); } catch (err) { rawMessage = ''; }\nconst clauseFor = (name) => {\n  const n = String(name ?? '').toLowerCase();\n  const parts = rawMessage.split(/[,;\\n]|\\s+(?:dan|lalu|terus|kemudian|and|then)\\s+/i);\n  return parts.find(p => n && p.toLowerCase().includes(n)) ?? rawMessage;\n};\n\nconst MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];\nconst fmtId = (y, m, d) => `${d} ${MONTHS[m - 1]} ${y}`;\n\n// Checks a deadline and fixes what can be fixed safely.\n// - not parseable / impossible month or year  -> { value: null }   (rejected)\n// - day beyond the month length (31 Feb)       -> clamped to the last day, with a note\n// - allowPartial (update): \"2028\" and \"2028-06\" are accepted as-is; the DB fills in the rest\nconst fixDate = (s, allowPartial) => {\n  const t = String(s).trim();\n  const yearOk = (y) => y >= 1900 && y <= 2200;\n\n  if (allowPartial) {\n    if (/^\\d{4}$/.test(t)) return { value: yearOk(Number(t)) ? t : null };\n    const pm = /^(\\d{4})-(\\d{2})$/.exec(t);\n    if (pm) return { value: yearOk(Number(pm[1])) && Number(pm[2]) >= 1 && Number(pm[2]) <= 12 ? t : null };\n  }\n\n  const m = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(t);\n  if (!m) return { value: null };\n  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);\n  if (!yearOk(y) || mo < 1 || mo > 12 || d < 1 || d > 31) return { value: null };\n\n  const last = new Date(Date.UTC(y, mo, 0)).getUTCDate();\n  if (d <= last) return { value: t };\n\n  const fixed = `${m[1]}-${m[2]}-${String(last).padStart(2, '0')}`;\n  return {\n    value: fixed,\n    note: `⚠️ Tanggal ${fmtId(y, mo, d)} tidak ada, jadi deadline disesuaikan ke ${fmtId(y, mo, last)}.`\n  };\n};\n\nconst existenceItems = $input.all();\nconst entityItems = $('Check Entities').all();\n\nconst seenCreate = new Set();\nreturn existenceItems.map((item, index) => {\n  let e = entityItems[index].json;\n  // exact name first; if not found, retry without a leading type word (\"savings rumah\" -> \"rumah\")\n  const useStripped = !item.json.category_exists && item.json.stripped_exists === true;\n  const exists = item.json.category_exists || useStripped;\n\n  // create on an existing name without any \"buat/bikin\": treat as an update of that field\n  if (e.action === 'create' && exists && !CREATE_WORDS.test(clauseFor(e.name))) {\n    e = {\n      ...e,\n      action: 'update',\n      new_amount: e.amount,\n      new_target_date: e.target_date,\n      amount: null,\n      target_date: null\n    };\n  }\n\n  const a = e.action;\n  const nameStr = isEmpty(e.name) ? '' : String(e.name).trim();\n\n  // value after the change; a change that would push it below 0 is rejected\n  const cur = item.json.current_amount == null ? null : Number(item.json.current_amount);\n  let nextAmount = null;\n  if (cur !== null && (a === 'increase' || a === 'decrease') && !isEmpty(e.amount)) {\n    nextAmount = cur + (a === 'decrease' ? -1 : 1) * Number(e.amount);\n  } else if (cur !== null && a === 'update' && (!isEmpty(e.new_amount) || !isEmpty(e.amount_delta))) {\n    nextAmount = (isEmpty(e.new_amount) ? cur : Number(e.new_amount)) + (Number(e.amount_delta) || 0);\n  }\n\n\n  let dateFix = null;\n  if (a === 'create' && !isEmpty(e.target_date)) dateFix = fixDate(e.target_date, false);\n  if (a === 'update' && !isEmpty(e.new_target_date)) dateFix = fixDate(e.new_target_date, true);\n\n  let reason = null;\n  if (a === 'create') {\n    if (isEmpty(e.name) || isEmpty(e.amount) || Number(e.amount) <= 0) reason = 'incomplete';\n    else if (exists || seenCreate.has(nameStr.toLowerCase())) reason = 'duplicate';\n    else if (dateFix && dateFix.value == null) reason = 'bad_date';\n  } else if (isEmpty(e.name)) {\n    reason = a === 'delete' ? 'bulk_delete' : 'name_required';\n  } else if (a === 'delete' && !exists && (BULK.test(nameStr) || TYPE_ONLY.test(nameStr) || BULK.test(clauseFor(nameStr)))) {\n    reason = 'bulk_delete';\n  } else if (!exists) {\n    reason = 'not_found';\n  } else if ((a === 'increase' || a === 'decrease') && isEmpty(e.amount)) {\n    reason = 'amount_required';\n  } else if (nextAmount !== null && nextAmount < 0) {\n    reason = 'below_zero';\n  } else if (a === 'update' && dateFix && dateFix.value == null) {\n    reason = 'bad_date';\n  } else if (a === 'update' && isEmpty(e.new_name) && isEmpty(e.new_amount) && isEmpty(e.new_target_date) && isEmpty(e.amount_delta)) {\n    reason = 'nothing_to_update';\n  } else if (a === 'update' && item.json.new_name_taken) {\n    reason = 'duplicate_new';\n  }\n\n  if (a === 'create' && !reason) seenCreate.add(nameStr.toLowerCase());\n\n  const out = {\n    ...e, ...item.json,\n    valid_status: reason ? 'invalid' : 'valid',\n    invalid_reason: reason\n  };\n\n  // downstream nodes use the resolved name\n  if (useStripped) out.name = item.json.stripped_name;\n\n  // use the corrected date downstream and remember a note for the reply\n  if (!reason && dateFix && dateFix.value != null) {\n    if (a === 'create') out.target_date = dateFix.value;\n    else out.new_target_date = dateFix.value;\n    if (dateFix.note) out.date_note = dateFix.note;\n  }\n\n  return { json: out };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        36384,
+        14032
+      ],
+      "id": "30846c95-99de-43f5-afd7-79ec8fb0167e",
+      "name": "Check Validation (S)",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO savings (\n  savings_name,\n  target_amount,\n  target_date\n)\nVALUES (\n  '{{ $json.name }}',\n  {{ $json.amount || 'NULL' }},\n  {{\n    $json.target_date\n      ? `CAST('${$json.target_date}' AS DATE)`\n      : 'NULL'\n  }}\n)\n  RETURNING *, TO_CHAR(target_date, 'YYYY-MM-DD') AS target_date_text;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        13632
+      ],
+      "id": "e0002304-266f-4da6-9a95-ac26c592d1cb",
+      "name": "Create (S)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const setupItems = $(\"Check Validation (S)\")\n  .all()\n  .filter(i => i.json.valid_status === \"valid\");\nconst rows = $(\"Merge (S)\").all().map(i => i.json);\n\nconst rp = (n) => \"Rp\" + new Intl.NumberFormat(\"id-ID\").format(Number(n ?? 0));\nconst same = (a, b) => a != null && b != null && String(a).toLowerCase() === String(b).toLowerCase();\nconst dateOrDash = (d) => (d ? String(d).slice(0, 10) : \"Belum ditentukan\");\n\nconst bar = (current, target) => {\n  if (!(Number(target) > 0)) return \"Belum memiliki target\";\n  const pct = Math.round((Number(current) / Number(target)) * 100);\n  const filled = Math.max(0, Math.min(10, Math.round(pct / 10)));\n  return \"▓\".repeat(filled) + \"░\".repeat(10 - filled) + \" \" + pct + \"%\";\n};\n\nconst out = [];\nfor (const item of setupItems) {\n  const data = item.json;\n  const action = data.action;\n\n  const s = rows.find(r => same(r.old_name ?? r.savings_name, data.name) || same(r.savings_name, data.name));\n  if (!s) continue;\n\n  const lines = [];\n  const summary = () => {\n    lines.push(\"\");\n    lines.push(`📅 Deadline: ${dateOrDash(s.target_date_text)}`);\n    lines.push(`🪙 Terkumpul: ${rp(s.current_amount)}`);\n    lines.push(`📊 Progress: ${bar(s.current_amount, s.target_amount)}`);\n  };\n\n  if (action === \"create\") {\n    lines.push(\"✅ Savings dibuat\", \"\");\n    lines.push(`🎯 ${s.savings_name}`);\n    lines.push(`💰 Target: ${rp(s.target_amount)}`);\n    summary();\n    if (data.date_note) lines.push(\"\", data.date_note);\n\n  } else if (action === \"increase\" || action === \"decrease\") {\n    const up = action === \"increase\";\n    const delta = Number(data.amount ?? 0);\n    const newT = Number(s.target_amount);\n    const oldT = up ? newT - delta : newT + delta;\n\n    lines.push(up ? \"✅ Target savings dinaikkan\" : \"✅ Target savings diturunkan\", \"\");\n    lines.push(`🎯 ${s.savings_name}`);\n    lines.push(`💰 Target: ${rp(oldT)} ➜ ${rp(newT)} (${up ? \"+\" : \"-\"}${rp(delta)})`);\n    summary();\n\n  } else if (action === \"update\") {\n    const oldName = s.old_name ?? data.name;\n    const oldT = Number(s.old_target_amount ?? s.target_amount);\n    const newT = Number(s.target_amount);\n    const oldD = s.old_target_date_text ?? null;\n    const newD = s.target_date_text ?? null;\n    const nameChanged = oldName !== s.savings_name;\n    const targetChanged = oldT !== newT;\n    const dateChanged = (oldD ?? \"\") !== (newD ?? \"\");\n\n    // perubahan relatif (naikkan/kurangi) yang dilipat ke update ini\n    const delta = Number(data.amount_delta ?? 0);\n    const showDelta = delta !== 0 && data.new_amount == null;\n    const deltaText = showDelta ? ` (${delta > 0 ? \"+\" : \"-\"}${rp(Math.abs(delta))})` : \"\";\n\n    lines.push(\"✅ Savings diperbarui\", \"\");\n    lines.push(`🎯 ${nameChanged ? `${oldName} ➜ ${s.savings_name}` : s.savings_name}`);\n    lines.push(`💰 Target: ${targetChanged ? `${rp(oldT)} ➜ ${rp(newT)}${deltaText}` : rp(newT)}`);\n    lines.push(\"\");\n    lines.push(`📅 Deadline: ${dateChanged ? `${dateOrDash(oldD)} ➜ ${dateOrDash(newD)}` : dateOrDash(newD)}`);\n    lines.push(`🪙 Terkumpul: ${rp(s.current_amount)}`);\n    lines.push(`📊 Progress: ${bar(s.current_amount, s.target_amount)}`);\n    if (data.date_note) lines.push(\"\", data.date_note);\n    if (!nameChanged && !targetChanged && !dateChanged) {\n      lines.push(\"\", \"ℹ️ Datanya sama dengan sebelumnya, tidak ada yang berubah.\");\n    }\n\n  } else if (action === \"delete\") {\n    lines.push(\"🗑️ Savings dihapus\", \"\");\n    lines.push(`🎯 ${s.savings_name}`);\n    lines.push(`💰 Target: ${rp(s.target_amount)}`);\n    lines.push(`🪙 Terkumpul terakhir: ${rp(s.current_amount)}`);\n\n  } else {\n    lines.push(\"✅ Selesai\");\n  }\n\n  out.push({ json: { action, message: lines.join(\"\\n\") } });\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        37760,
+        13824
+      ],
+      "id": "55cb4d28-cbf0-4eb5-901b-e810a9a9595d",
+      "name": "Savings Formatter"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0b0eb9b0-fcbb-420e-aa5b-813ee1ec2349",
+              "name": "=response",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        38048,
+        13824
+      ],
+      "id": "5d637623-b374-4d29-b9b7-839154dba7d5",
+      "name": "Savings Update Response"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH old AS (\n  SELECT savings_id,\n         savings_name  AS old_name,\n         target_amount AS old_target_amount,\n         TO_CHAR(target_date, 'YYYY-MM-DD') AS old_target_date_text\n  FROM savings\n  WHERE LOWER(savings_name) = LOWER('{{ $json.name }}')\n),\n-- new_target_date may be \"2028\", \"2028-06\" or \"2028-06-30\": split it into parts (NULL if absent)\nnd AS (\n  SELECT\n    SUBSTRING(NULLIF(NULLIF('{{ $json.new_target_date }}', 'null'), '') FROM '^(\\d{4})')::INT              AS y,\n    SUBSTRING(NULLIF(NULLIF('{{ $json.new_target_date }}', 'null'), '') FROM '^\\d{4}-(\\d{2})')::INT        AS m,\n    SUBSTRING(NULLIF(NULLIF('{{ $json.new_target_date }}', 'null'), '') FROM '^\\d{4}-\\d{2}-(\\d{2})')::INT AS d\n)\nUPDATE savings s\nSET savings_name  = COALESCE(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''), s.savings_name),\n    target_amount = COALESCE(NULLIF(NULLIF('{{ $json.new_amount }}', 'null'), '')::BIGINT, s.target_amount)\n                    + {{ Number($json.amount_delta) || 0 }},\n    -- missing parts are taken from the current deadline (month/day) or default to Dec 31;\n    -- the day is clamped to the month length (e.g. 29 Feb -> 28 Feb in a non-leap year)\n    target_date   = CASE\n      WHEN nd.y IS NULL THEN s.target_date\n      ELSE make_date(nd.y, COALESCE(nd.m, EXTRACT(MONTH FROM s.target_date)::INT, 12), 1)\n           + (LEAST(\n                COALESCE(nd.d, EXTRACT(DAY FROM s.target_date)::INT, 31),\n                EXTRACT(DAY FROM (make_date(nd.y, COALESCE(nd.m, EXTRACT(MONTH FROM s.target_date)::INT, 12), 1)\n                                  + INTERVAL '1 month - 1 day'))::INT\n              ) - 1)\n    END,\n    updated_at    = NOW()\nFROM old, nd\nWHERE s.savings_id = old.savings_id\nRETURNING s.*, TO_CHAR(s.target_date, 'YYYY-MM-DD') AS target_date_text,\n          old.old_name, old.old_target_amount, old.old_target_date_text;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        14016
+      ],
+      "id": "7c4ff33e-397b-4727-ab67-b85d2f94fefd",
+      "name": "Update (S)",
+      "executeOnce": false,
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM savings\nWHERE LOWER(savings_name) = LOWER('{{ $json.name }}')\n  RETURNING *, TO_CHAR(target_date, 'YYYY-MM-DD') AS target_date_text;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        14208
+      ],
+      "id": "659a71ff-b097-4023-8d12-2b9372a14dab",
+      "name": "Delete (S)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT savings_name\nFROM savings\nORDER BY savings_name;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        36896,
+        14416
+      ],
+      "id": "78d76d19-cc70-4f6f-bb8d-691350347d3c",
+      "name": "Get Savings Name (S)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const FIELD = 'savings_name';\nconst EMPTY = '(belum ada savings)';\n\n// unique names only: this node can receive the same rows once per rejected item\nconst names = [...new Set(items.map(item => item.json[FIELD]).filter(Boolean))];\n\nreturn [{\n  json: {\n    categories: names.length\n      ? names.map(n => `• ${n}`).join('\\n')\n      : EMPTY\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        37184,
+        14416
+      ],
+      "id": "418c60bd-a975-4af5-9bc8-916d368777a3",
+      "name": "Show Savings Name (S)"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "={{ (() => {\n  const list = $json.categories;\n  const rp = (n) => 'Rp' + new Intl.NumberFormat('id-ID').format(Number(n ?? 0));\n  const bad = $('Check Validation (S)').all().map(i => i.json).filter(j => j.valid_status === 'invalid');\n  if (!bad.length) return '⚠️ Perintah tidak bisa diproses.';\n\n  // exactly one rejected command: a short, specific message\n  const single = (j) => {\n    const nm = j.name;\n    switch (j.invalid_reason) {\n      case 'below_zero': return '⚠️ Target savings \"' + nm + '\" tidak boleh di bawah Rp0. Target saat ini ' + rp(j.current_amount) + ', pengurangan ' + rp(j.amount) + ' terlalu besar.';\n      case 'duplicate': return '⚠️ Savings \"' + nm + '\" sudah ada. Pakai nama lain, atau ubah savings yang sudah ada.\\n\\nNama savings yang ada:\\n' + list + '\\n\\nContoh: \"ubah target savings rumah jadi 250jt\"';\n      case 'duplicate_new': return '⚠️ Nama \"' + j.new_name + '\" sudah dipakai savings lain. Pilih nama yang berbeda.\\n\\nNama savings yang ada:\\n' + list;\n      case 'incomplete': return '⚠️ Data savings belum lengkap. Sebutkan nama dan target.\\n\\nContoh: \"buat savings rumah target 200jt\"';\n      case 'bulk_delete': return '⚠️ Penghapusan massal tidak didukung.\\n\\nDemi keamanan, savings dihapus satu per satu. Sebutkan namanya.\\n\\nNama savings yang ada:\\n' + list + '\\n\\nContoh: \"hapus savings rumah\"';\n      case 'name_required': return '⚠️ Sebutkan nama savings yang ingin diubah.\\n\\nNama savings yang ada:\\n' + list;\n      case 'amount_required': return '⚠️ Nominalnya belum disebutkan.\\n\\nContoh: \"tambah savings ' + (nm ?? 'rumah') + ' 100rb\"';\n      case 'bad_date': return '⚠️ Tanggal deadline \"' + (j.target_date ?? j.new_target_date) + '\" tidak valid.\\n\\nContoh: \"deadline 28 februari 2027\"';\n      case 'nothing_to_update': return 'ℹ️ Tidak ada yang diubah. Sebutkan nama baru, target baru, atau deadline baru.\\n\\nContoh: \"ubah target savings rumah jadi 250jt\"';\n      default: return '⚠️ Nama savings \"' + nm + '\" tidak ditemukan.\\n\\nNama savings yang ada:\\n' + list + '\\n\\nUntuk membuat baru, tulis: \"buat savings rumah target 200jt\"';\n    }\n  };\n\n  // several rejected commands: one combined message\n  const why = (j) => {\n    switch (j.invalid_reason) {\n      case 'below_zero': return 'hasil perubahan di bawah Rp0 (target saat ini ' + rp(j.current_amount) + ')';\n      case 'duplicate': return 'nama sudah ada';\n      case 'duplicate_new': return 'nama baru \"' + j.new_name + '\" sudah dipakai savings lain';\n      case 'incomplete': return 'data belum lengkap (sebutkan nama dan target)';\n      case 'bulk_delete': return 'penghapusan massal tidak didukung, sebutkan satu nama';\n      case 'name_required': return 'nama savings belum disebutkan';\n      case 'amount_required': return 'nominal belum disebutkan';\n      case 'bad_date': return 'tanggal deadline tidak valid (' + (j.target_date ?? j.new_target_date) + ')';\n      case 'nothing_to_update': return 'tidak ada yang diubah (sebutkan nama baru, target baru, atau deadline baru)';\n      default: return 'tidak ditemukan';\n    }\n  };\n\n  if (bad.length === 1) return single(bad[0]);\n\n  const hints = {\n    not_found: 'Untuk membuat baru, tulis: \"buat savings rumah target 200jt\"',\n    duplicate: 'Contoh: \"ubah target savings rumah jadi 250jt\"',\n    incomplete: 'Contoh: \"buat savings rumah target 200jt\"',\n    bulk_delete: 'Contoh: \"hapus savings rumah\"',\n    amount_required: 'Contoh: \"tambah savings rumah 100rb\"',\n    bad_date: 'Contoh: \"deadline 28 februari 2027\"',\n    nothing_to_update: 'Contoh: \"ubah target savings rumah jadi 250jt\"'\n  };\n  const lines = bad.map(j => '• ' + (j.name ? '\"' + j.name + '\"' : '(tanpa nama)') + ': ' + why(j));\n  const hint = hints[bad[0].invalid_reason ?? 'not_found'] ?? '';\n  return '⚠️ Beberapa perintah tidak bisa diproses:\\n' + lines.join('\\n')\n    + '\\n\\nNama savings yang ada:\\n' + list\n    + (hint ? '\\n\\n' + hint : '');\n})() }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        37472,
+        14416
+      ],
+      "id": "643de16f-9f12-4077-b6c3-3b95ad105e38",
+      "name": "Invalid Action Warning (S)",
+      "webhookId": "70d4b887-536d-4fb4-af08-79dfc38dee81",
+      "credentials": {
+        "telegramApi": {
+          "id": "hLoCwuqxFZPrCHEN",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "e5e632a6-a898-466a-8df2-7607151ac7dd",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "create",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CREATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "709a604a-dcab-416f-a1bd-1a1cef79f026",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "=^(increase|decrease)$",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ADJUST"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "268789ba-12a0-4c9d-a3b2-1ab256cc81c8",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "UPDATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "0512385e-c606-4d64-991f-b8c4cc637dc4",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "DELETE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        36896,
+        13888
+      ],
+      "id": "39651a49-297f-47e7-b4e0-55c5a53987fc",
+      "name": "Check Action Type (S)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE savings\nSET target_amount = CASE\n      WHEN '{{ $json.action }}' = 'increase'\n        THEN target_amount + COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::BIGINT\n      WHEN '{{ $json.action }}' = 'decrease'\n        THEN target_amount - COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::BIGINT\n      ELSE target_amount\n    END,\n    updated_at = NOW()\nWHERE LOWER(savings_name) = LOWER('{{ $json.name }}')\nRETURNING *, TO_CHAR(target_date, 'YYYY-MM-DD') AS target_date_text;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        13824
+      ],
+      "id": "99b716c3-ddfc-4f4a-b8fa-ab9a5129f120",
+      "name": "Adjust (S)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        37472,
+        13792
+      ],
+      "id": "e7f84e87-2b98-4297-a04c-16f7a08e8432",
+      "name": "Merge (S)"
+    },
+    {
+      "parameters": {
+        "numberInputs": 9
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        38272,
+        13712
+      ],
+      "id": "b0ad80aa-9795-410c-b0bc-e355f5eb66b3",
+      "name": "Merge All"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE budgets\nSET limit_amount = CASE\n      WHEN '{{ $json.action }}' = 'increase'\n        THEN limit_amount + COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::BIGINT\n      WHEN '{{ $json.action }}' = 'decrease'\n        THEN limit_amount - COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::BIGINT\n      ELSE limit_amount\n    END,\n    updated_at = NOW()\nWHERE LOWER(category) = LOWER('{{ $json.name }}')\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        12832
+      ],
+      "id": "64f6ce59-a1a9-41b0-87c8-249a5c8c10f2",
+      "name": "Adjust (B)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        37472,
+        12800
+      ],
+      "id": "f907b268-c7ce-4539-83ae-fcf754e04823",
+      "name": "Merge (B)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  EXISTS (\n    SELECT 1 FROM accounts\n    WHERE LOWER(account_name) = LOWER('{{ $json.name }}')\n) AS category_exists,\n  EXISTS (\n    SELECT 1 FROM accounts\n    WHERE LOWER(account_name) = LOWER(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''))\n    AND LOWER(account_name) <> LOWER('{{ $json.name }}')\n  ) AS new_name_taken,\n  (SELECT balance FROM accounts WHERE LOWER(account_name) = LOWER('{{ $json.name }}')) AS current_amount,\n  (SELECT account_type FROM accounts WHERE LOWER(account_name) = LOWER('{{ $json.name }}')) AS current_type;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        36096,
+        15024
+      ],
+      "id": "de88901a-ef79-43af-ae23-5c3d2c0d02d0",
+      "name": "Check Existence (A)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ALLOWED = ['cash', 'bank', 'credit_card', 'e-wallet', 'loan', 'other'];\nconst ALIAS = {\n  'ewallet': 'e-wallet', 'e wallet': 'e-wallet', 'dompet digital': 'e-wallet',\n  'tunai': 'cash', 'kartu kredit': 'credit_card', 'credit card': 'credit_card',\n  'pinjaman': 'loan', 'utang': 'loan', 'hutang': 'loan'\n};\n\n// \"delete all accounts\" -> empty name or a bulk-action keyword; never perform bulk deletion\nconst BULK = /\\b(semua|semuanya|seluruh|segala|all|every|everything)\\b/i;\n// a name that is only a type word (\"savings\", \"budget\", \"akun\") means the parser dropped \"semua\"\nconst TYPE_ONLY = /^(budgets?|kategori|categor(?:y|ies)|savings?|tabungan|goals?|akun|akun-akun|accounts?|rekening)$/i;\nlet rawMessage = '';\ntry { rawMessage = String($('Data Input').first().json.message ?? ''); } catch (err) { rawMessage = ''; }\nconst clauseFor = (name) => {\n  const n = String(name ?? '').toLowerCase();\n  const parts = rawMessage.split(/[,;\\n]|\\s+(?:dan|lalu|terus|kemudian|and|then)\\s+/i);\n  return parts.find(p => n && p.toLowerCase().includes(n)) ?? rawMessage;\n};\n\nconst isEmpty = (v) => v == null || v === 'null' || v === '';\n\nconst clean = (v) => {\n  if (v == null || v === 'null' || v === '') return null;\n  const t = String(v).trim().toLowerCase();\n  return ALIAS[t] ?? t;\n};\n\nconst existenceItems = $input.all();\nconst entityItems = $('Check Entities').all();\n\nreturn existenceItems.map((item, index) => {\n  const entity = entityItems[index].json;\n  const a = entity.action;\n  const type = clean(entity.acc_type);\n  const newType = clean(entity.new_acc_type);\n  const exists = item.json.category_exists;\n  const nameStr = isEmpty(entity.name) ? '' : String(entity.name).trim();\n\n  // balance after the change; cash/bank/e-wallet/other cannot go below 0\n  // (credit_card and loan may legitimately be negative)\n  const cur = item.json.current_amount == null ? null : Number(item.json.current_amount);\n  const effType = newType || item.json.current_type;\n  const canBeNegative = ['credit_card', 'loan'].includes(effType);\n  let nextAmount = null;\n  if (cur !== null && !canBeNegative) {\n    if ((a === 'increase' || a === 'decrease') && !isEmpty(entity.amount)) {\n      nextAmount = cur + (a === 'decrease' ? -1 : 1) * Number(entity.amount);\n    } else if (a === 'update' && (!isEmpty(entity.new_amount) || !isEmpty(entity.amount_delta))) {\n      nextAmount = (isEmpty(entity.new_amount) ? cur : Number(entity.new_amount)) + (Number(entity.amount_delta) || 0);\n    }\n  }\n\n\n  let reason = null;\n  if (a === 'create') {\n    if (isEmpty(entity.name) || isEmpty(entity.amount) || type == null) reason = 'incomplete';\n    else if (!ALLOWED.includes(type)) reason = 'bad_type';\n    else if (exists) reason = 'duplicate';\n  } else if (isEmpty(entity.name)) {\n    reason = a === 'delete' ? 'bulk_delete' : 'name_required';\n  } else if (a === 'delete' && !exists && (BULK.test(nameStr) || TYPE_ONLY.test(nameStr) || BULK.test(clauseFor(nameStr)))) {\n    reason = 'bulk_delete';\n  } else if (!exists) {\n    reason = 'not_found';\n  } else if ((a === 'increase' || a === 'decrease') && isEmpty(entity.amount)) {\n    reason = 'amount_required';\n  } else if (nextAmount !== null && nextAmount < 0) {\n    reason = 'below_zero';\n  } else if (a === 'update' && newType && !ALLOWED.includes(newType)) {\n    reason = 'bad_type';\n  } else if (a === 'update' && isEmpty(entity.new_name) && isEmpty(entity.new_amount) && !newType && isEmpty(entity.amount_delta)) {\n    reason = 'nothing_to_update';\n  } else if (a === 'update' && item.json.new_name_taken) {\n    reason = 'duplicate_new';\n  }\n\n  return {\n    json: {\n      ...entity, ...item.json,\n      acc_type: type, new_acc_type: newType,\n      valid_status: reason ? 'invalid' : 'valid',\n      invalid_reason: reason\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        36384,
+        15024
+      ],
+      "id": "b127c731-64bd-4917-ba93-4d8e59e7e502",
+      "name": "Check Validation (A)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "65b7781c-250a-4658-9852-c5d3eb12499f",
+              "leftValue": "={{ $json.valid_status }}",
+              "rightValue": "valid",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        36672,
+        14032
+      ],
+      "id": "b2ea9f58-f0ce-44cd-8a92-e8ec67515da6",
+      "name": "If Valid (S)",
+      "alwaysOutputData": false,
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "668cb566-e76d-4246-acb8-3e064be371e7",
+              "leftValue": "={{ $json.valid_status }}",
+              "rightValue": "valid",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        36672,
+        15024
+      ],
+      "id": "99ba8f77-c55c-497b-b073-21daf929ad59",
+      "name": "If Valid (A)"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "={{ (() => {\n  const list = $json.categories;\n  const rp = (n) => 'Rp' + new Intl.NumberFormat('id-ID').format(Number(n ?? 0));\n  const bad = $('Check Validation (A)').all().map(i => i.json).filter(j => j.valid_status === 'invalid');\n  if (!bad.length) return '⚠️ Perintah tidak bisa diproses.';\n  const types = 'cash, bank, e-wallet, credit card, loan, other';\n  // exactly one rejected command: a short, specific message\n  const single = (j) => {\n    const nm = j.name;\n    switch (j.invalid_reason) {\n      case 'below_zero': return '⚠️ Saldo akun \"' + nm + '\" tidak boleh di bawah Rp0. Saldo saat ini ' + rp(j.current_amount) + ', pengurangan ' + rp(j.amount) + ' terlalu besar.\\n\\nContoh: \"kurangi saldo akun ' + nm + ' ' + String(Math.floor(Number(j.current_amount) / 2)) + '\"';\n      case 'duplicate': return '⚠️ Akun \"' + nm + '\" sudah ada. Pakai nama lain, atau ubah akun yang sudah ada.\\n\\nAkun yang ada:\\n' + list;\n      case 'duplicate_new': return '⚠️ Nama \"' + j.new_name + '\" sudah dipakai akun lain. Pilih nama yang berbeda.\\n\\nAkun yang ada:\\n' + list;\n      case 'name_required': return '⚠️ Sebutkan nama akun yang ingin diubah.\\n\\nAkun yang ada:\\n' + list;\n      case 'amount_required': return '⚠️ Nominalnya belum disebutkan.\\n\\nContoh: \"tambah saldo akun ' + (nm ?? 'BCA') + ' 100rb\"';\n      case 'nothing_to_update': return 'ℹ️ Tidak ada yang diubah. Sebutkan nama baru, tipe baru, atau saldo baru.\\n\\nContoh: \"ubah tipe akun ' + (nm ?? 'BCA') + ' jadi e-wallet\"';\n      case 'bad_type': return '⚠️ Tipe akun tidak dikenali.\\n\\nTipe yang tersedia: ' + types + '\\n\\nContoh: \"buat akun BCA tipe bank saldo awal 5jt\"';\n      case 'incomplete': return '⚠️ Data akun belum lengkap. Sebutkan nama, tipe (' + types + '), dan saldo awal.\\n\\nContoh: \"buat akun BCA tipe bank saldo awal 5jt\"';\n      case 'bulk_delete': return '⚠️ Penghapusan massal tidak didukung.\\n\\nDemi keamanan, akun hanya dapat dihapus satu per satu. Sebutkan nama akunnya.\\n\\nAkun yang ada:\\n' + list + '\\n\\nContoh: \"hapus akun OVO\"';\n      default: return '⚠️ Akun \"' + nm + '\" tidak ditemukan.\\n\\nAkun yang ada:\\n' + list;\n    }\n  };\n\n  // several rejected commands: one combined message\n  const why = (j) => {\n    switch (j.invalid_reason) {\n      case 'below_zero': return 'hasil perubahan di bawah Rp0 (saldo saat ini ' + rp(j.current_amount) + ')';\n      case 'duplicate': return 'nama sudah ada';\n      case 'duplicate_new': return 'nama baru \"' + j.new_name + '\" sudah dipakai akun lain';\n      case 'name_required': return 'nama akun belum disebutkan';\n      case 'amount_required': return 'nominal belum disebutkan';\n      case 'nothing_to_update': return 'tidak ada yang diubah (sebutkan nama baru, tipe baru, atau saldo baru)';\n      case 'bad_type': return 'tipe akun tidak dikenali (' + types + ')';\n      case 'incomplete': return 'data belum lengkap (sebutkan nama, tipe, dan saldo awal)';\n      case 'bulk_delete': return 'penghapusan massal tidak didukung, sebutkan satu nama';\n      default: return 'tidak ditemukan';\n    }\n  };\n\n  if (bad.length === 1) return single(bad[0]);\n\n  const hints = {\n    duplicate: 'Contoh: \"ubah saldo akun BCA jadi 5jt\"',\n    bad_type: 'Tipe yang tersedia: ' + types,\n    incomplete: 'Contoh: \"buat akun BCA tipe bank saldo awal 5jt\"',\n    bulk_delete: 'Contoh: \"hapus akun OVO\"',\n    amount_required: 'Contoh: \"tambah saldo akun BCA 100rb\"',\n    nothing_to_update: 'Contoh: \"ubah tipe akun BCA jadi e-wallet\"'\n  };\n  const lines = bad.map(j => '• ' + (j.name ? '\"' + j.name + '\"' : '(tanpa nama)') + ': ' + why(j));\n  const hint = hints[bad[0].invalid_reason ?? 'not_found'] ?? '';\n  return '⚠️ Beberapa perintah tidak bisa diproses:\\n' + lines.join('\\n')\n    + '\\n\\nAkun yang ada:\\n' + list\n    + (hint ? '\\n\\n' + hint : '');\n})() }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        37472,
+        15408
+      ],
+      "id": "064d1593-af99-4739-b932-ae2532955b7a",
+      "name": "Invalid Action Warning (A)",
+      "webhookId": "44f0d31f-cb6f-4278-a9bd-d0de7a780f7c",
+      "credentials": {
+        "telegramApi": {
+          "id": "hLoCwuqxFZPrCHEN",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "create",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "959c1b95-d79e-422b-9d37-f799adb2457e"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CREATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "93c2fac0-bb4e-4d25-81e2-fb1ef0f6a22a",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "=^(increase|decrease)$",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ADJUST"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "9ac85dce-484e-4bd0-a57c-30a3d6f382aa",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "UPDATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "b9510a90-e64d-47c2-b120-c05917284f0d",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "DELETE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        36896,
+        14880
+      ],
+      "id": "4532a6f3-6bc3-4332-8ab7-846716c4269c",
+      "name": "Check Action Type (A)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO accounts (\n  account_name,\n  account_type,\n  balance\n)\nVALUES (\n  '{{ $('Check Entities').item.json.name }}',\n  '{{ $json.acc_type }}',\n  {{ $('Check Entities').item.json.amount || 'NULL' }}\n)\n  RETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        14624
+      ],
+      "id": "5a11bdd2-6d77-4d0c-8416-1b1e712b8b11",
+      "name": "Create (A)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH old AS (\n  SELECT account_id,\n         account_name AS old_name,\n         account_type AS old_type,\n         balance      AS old_balance\n  FROM accounts\n  WHERE LOWER(account_name) = LOWER('{{ $json.name }}')\n)\nUPDATE accounts a\nSET balance = CASE\n      WHEN '{{ $json.action }}' = 'increase'\n        THEN a.balance + COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::bigint\n      WHEN '{{ $json.action }}' = 'decrease'\n        THEN a.balance - COALESCE(NULLIF('{{ $json.amount }}', 'null'), '0')::bigint\n      ELSE a.balance\n    END,\n    updated_at = NOW()\nFROM old\nWHERE a.account_id = old.account_id\nRETURNING a.*, old.old_name, old.old_type, old.old_balance;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        14816
+      ],
+      "id": "735426a7-e5b6-4dd9-bbdd-330eefa313d2",
+      "name": "Adjust (A)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH old AS (\n  SELECT account_id,\n         account_name AS old_name,\n         account_type AS old_type,\n         balance      AS old_balance\n  FROM accounts\n  WHERE LOWER(account_name) = LOWER('{{ $json.name }}')\n)\nUPDATE accounts a\nSET account_name = COALESCE(NULLIF(NULLIF('{{ $json.new_name }}', 'null'), ''), a.account_name),\n    account_type = COALESCE(NULLIF(NULLIF('{{ $json.new_acc_type }}', 'null'), ''), a.account_type),\n    balance = COALESCE(NULLIF(NULLIF('{{ $json.new_amount }}', 'null'), '')::BIGINT, a.balance)\n                + {{ Number($json.amount_delta) || 0 }},\n    updated_at   = NOW()\nFROM old\nWHERE a.account_id = old.account_id\nRETURNING a.*, old.old_name, old.old_type, old.old_balance;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        15008
+      ],
+      "id": "aa6960d7-2bdf-4d12-8491-1c8bf458d7e9",
+      "name": "Update (A)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM accounts\nWHERE LOWER(account_name) = LOWER('{{ $json.name }}')\n  RETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        15200
+      ],
+      "id": "44705bdd-d544-46c1-a7ae-52d2ee9d6c36",
+      "name": "Delete (A)",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        37472,
+        14784
+      ],
+      "id": "ddafa754-8fb8-4f44-aa76-5feb3d22239a",
+      "name": "Merge (A)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const setupItems = $(\"Check Validation (A)\")\n  .all()\n  .filter(i => i.json.valid_status === \"valid\");\nconst rows = $(\"Merge (A)\").all().map(i => i.json);\n\nconst rp = (n) => \"Rp\" + new Intl.NumberFormat(\"id-ID\").format(Number(n ?? 0));\nconst same = (a, b) => a != null && b != null && String(a).toLowerCase() === String(b).toLowerCase();\n\nconst ICONS = { bank: \"🏦\", \"e-wallet\": \"📱\", cash: \"💵\", credit_card: \"💳\", loan: \"🧾\", other: \"📦\" };\nconst iconFor = (type) => ICONS[String(type ?? \"\").toLowerCase()] ?? \"📦\";\n\nreturn setupItems.map((item) => {\n  const data = item.json;\n  const action = data.action;\n\n  // cocokkan lewat nama (bukan urutan), supaya item lain tidak menggeser hasilnya\n  const acc = rows.find(r => same(r.old_name ?? r.account_name, data.name) || same(r.account_name, data.name));\n\n  if (!acc || !acc.account_id) {\n    return {\n      json: {\n        action,\n        message: `⚠️ Tidak ada yang berubah.\\n\\nAkun \"${data.name}\" tidak ditemukan atau datanya sama.`\n      }\n    };\n  }\n\n  const icon = iconFor(acc.account_type);\n  const lines = [];\n\n  if (action === \"create\") {\n    lines.push(\"✅ Akun dibuat\", \"\");\n    lines.push(`${icon} ${acc.account_name}`);\n    lines.push(`🏷️ Tipe: ${acc.account_type}`);\n    lines.push(`💰 Saldo: ${rp(acc.balance)}`);\n\n  } else if (action === \"increase\" || action === \"decrease\") {\n    const up = action === \"increase\";\n    const delta = Number(data.amount ?? 0);\n    const newBal = Number(acc.balance);\n    const oldBal = up ? newBal - delta : newBal + delta;\n\n    lines.push(up ? \"✅ Saldo bertambah\" : \"✅ Saldo berkurang\", \"\");\n    lines.push(`${icon} ${acc.account_name}`);\n    lines.push(`🏷️ Tipe: ${acc.account_type}`);\n    lines.push(`💰 Saldo: ${rp(oldBal)} ➜ ${rp(newBal)} (${up ? \"+\" : \"-\"}${rp(delta)})`);\n\n  } else if (action === \"update\") {\n    const oldName = acc.old_name ?? data.name;\n    const oldType = acc.old_type;\n    const oldBal = Number(acc.old_balance ?? acc.balance);\n    const newBal = Number(acc.balance);\n\n    // perubahan relatif (naikkan/kurangi) yang dilipat ke update ini\n    const delta = Number(data.amount_delta ?? 0);\n    const showDelta = delta !== 0 && data.new_amount == null;\n    const deltaText = showDelta ? ` (${delta > 0 ? \"+\" : \"-\"}${rp(Math.abs(delta))})` : \"\";\n\n    const nameChanged = oldName !== acc.account_name;\n    const typeChanged = oldType !== acc.account_type;\n    const balChanged = oldBal !== newBal;\n\n    lines.push(\"✅ Akun diperbarui\", \"\");\n    lines.push(`${icon} ${nameChanged ? `${oldName} ➜ ${acc.account_name}` : acc.account_name}`);\n    lines.push(`🏷️ Tipe: ${typeChanged ? `${oldType} ➜ ${acc.account_type}` : acc.account_type}`);\n    lines.push(`💰 Saldo: ${balChanged ? `${rp(oldBal)} ➜ ${rp(newBal)}${deltaText}` : rp(newBal)}`);\n\n    if (!nameChanged && !typeChanged && !balChanged) {\n      lines.push(\"\", \"ℹ️ Datanya sama dengan sebelumnya, tidak ada yang berubah.\");\n    }\n\n  } else if (action === \"delete\") {\n    lines.push(\"🗑️ Akun dihapus\", \"\");\n    lines.push(`${icon} ${acc.account_name}`);\n    lines.push(`🏷️ Tipe: ${acc.account_type}`);\n    lines.push(`💰 Saldo terakhir: ${rp(acc.balance)}`);\n\n  } else {\n    lines.push(\"✅ Selesai\");\n  }\n\n  return { json: { action, message: lines.join(\"\\n\") } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        37760,
+        14816
+      ],
+      "id": "6f1a6411-bc43-4fd6-b171-b104d9134b46",
+      "name": "Account Formatter"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "86e20350-0d5c-4a3c-8834-e663c55176a1",
+              "name": "response",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        38048,
+        14816
+      ],
+      "id": "5c3e5caa-4d71-43b8-90ee-82a5c94fe56a",
+      "name": "Account Update Response"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "🤔 Aku belum paham pesan itu.\n\nCoba salah satu format ini:\n\n💸 Catat transaksi\n\"makan siang 50rb pakai BCA\"\n\"gaji masuk 10jt ke BCA\"\n\n🎯 Atur akun, budget, savings\n\"buat akun BCA tipe bank saldo awal 5jt\"\n\"buat budget food 500rb\"\n\"ubah tipe akun Dompet jadi e-wallet\"\n\n📊 Lihat ringkasan\n\"sisa uangku berapa?\"",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        35136,
+        15536
+      ],
+      "id": "40dc6d16-bffb-4781-bc14-fa59bb25ad01",
+      "name": "Unmatched Input",
+      "webhookId": "5b48938a-7f87-4bb4-8bac-039da21635e3",
+      "credentials": {
+        "telegramApi": {
+          "id": "hLoCwuqxFZPrCHEN",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT account_name\nFROM accounts\nORDER BY account_name;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        36896,
+        15408
+      ],
+      "id": "a5760862-f417-4e73-8aab-197de50c1f85",
+      "name": "Get Account Name (S)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const FIELD = 'account_name';\nconst EMPTY = '(belum ada akun)';\n\n// unique names only: this node can receive the same rows once per rejected item\nconst names = [...new Set(items.map(item => item.json[FIELD]).filter(Boolean))];\n\nreturn [{\n  json: {\n    categories: names.length\n      ? names.map(n => `• ${n}`).join('\\n')\n      : EMPTY\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        37184,
+        15408
+      ],
+      "id": "37956f4c-4a08-449b-a2ff-172e707740d5",
+      "name": "Show Account Name (S)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const FIELD = 'category';\nconst EMPTY = '(belum ada budget)';\n\n// unique names only: this node can receive the same rows once per rejected item\nconst names = [...new Set(items.map(item => item.json[FIELD]).filter(Boolean))];\n\nreturn [{\n  json: {\n    categories: names.length\n      ? names.map(n => `• ${n}`).join('\\n')\n      : EMPTY\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        37184,
+        13424
+      ],
+      "id": "53cde46e-2d67-474f-bc3e-6689b962a5e6",
+      "name": "Show Budget Category (S)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\nconst key = (s) => String(s ?? '').trim().toLowerCase();\nconst same = (a, b) => key(a) !== '' && key(a) === key(b);\n\nconst updates = items.filter(i => i.action === 'update').map(i => ({ ...i }));\nconst rest = [];\n\nfor (const it of items) {\n  if (it.action === 'update') continue;\n\n  if (it.action === 'increase' || it.action === 'decrease') {\n    const target = updates.find(u =>\n      u.entity === it.entity && (same(u.name, it.name) || same(u.new_name, it.name))\n    );\n    if (target) {\n      const signed = (it.action === 'increase' ? 1 : -1) * Number(it.amount ?? 0);\n      target.amount_delta = Number(target.amount_delta ?? 0) + signed;\n      continue; // dilipat ke update\n    }\n  }\n  rest.push(it);\n}\n\n// pairedItem: tell n8n these items all come from the incoming message\nreturn [...updates, ...rest].map(json => ({ json, pairedItem: { item: 0 } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        35648,
+        14624
+      ],
+      "id": "5fb07547-906d-4103-972c-22ed4a84648c",
+      "name": "Merge Same-Object"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize Transactions: turns the parser output into 1 clean item per transaction.\n// No database lookups here; all validation happens inside record_transaction() in Postgres.\nconst TYPE_ALIAS = { expense: 'expenses', expenses: 'expenses', income: 'income', transfer: 'transfer', saving: 'savings', savings: 'savings' };\n\nfunction readText(data) {\n  const out = Array.isArray(data.output) ? data.output : [];\n  for (const item of out) for (const c of (item.content || [])) if (typeof c.text === 'string') return c.text;\n  return '';\n}\nconst clean = v => {\n  if (v === null || v === undefined) return null;\n  const s = String(v).trim();\n  return (s === '' || ['null', 'undefined', 'n/a'].includes(s.toLowerCase())) ? null : s;\n};\nconst toAmount = v => {\n  if (typeof v === 'number') return Number.isFinite(v) ? Math.round(v) : null;\n  const s = clean(v);\n  if (!s) return null;\n  const digits = s.replace(/[^\\d-]/g, '');          // \"10.000.000\" -> 10000000\n  return digits && digits !== '-' ? Number(digits) : null;\n};\n\n// Guard against the model \"helpfully\" guessing: an account / savings name only counts if the user\n// actually wrote it (the full name, or one word of it of 3+ letters, e.g. \"bca\" for \"BCA Utama\").\nconst userMsg = String($('Data Input').first().json.message || '').toLowerCase();\nconst mentioned = name => {\n  if (!name) return null;\n  const n = name.toLowerCase();\n  if (userMsg.includes(n)) return name;\n  const words = n.split(/[^a-z0-9]+/).filter(w => w.length >= 3);\n  return words.some(w => new RegExp(`(^|[^a-z0-9])${w}([^a-z0-9]|$)`).test(userMsg)) ? name : null;\n};\n\n// Budgets the user created (sent by Get All Data). Without database lookups here, these names are what the\n// category has to match, because the database looks the budget up by name.\nconst budgetNames = (() => {\n  try { return ($('Get All Data').first().json.budgets || []).map(b => b.category).filter(Boolean); } catch (e) { return []; }\n})();\nconst findBudget = s => budgetNames.find(n => n.toLowerCase() === String(s || '').trim().toLowerCase()) || null;\n\n// The parser picks a category KEY (food, shopping, ...) and should answer with the user's own budget name when\n// one fits. If it only gave the key, look for a budget whose name belongs to that key.\nconst KEY_ALIAS = {\n  health: 'health_and_fitness', fitness: 'health_and_fitness', sport: 'health_and_fitness', sports: 'health_and_fitness',\n  gift: 'gifts_and_donations', gifts: 'gifts_and_donations', donation: 'gifts_and_donations', donations: 'gifts_and_donations',\n  subscription: 'subscriptions', utilities: 'bills', bill: 'bills', groceries: 'food', dining: 'food',\n  hobby: 'entertainment', hobbies: 'entertainment', pet: 'pets', housing: 'home', transportation: 'transport',\n  personal_care: 'personal_care', misc: 'other', others: 'other'\n};\nconst KEY_BUDGET_WORDS = {\n  food: ['food', 'makan', 'makanan', 'minum', 'kuliner', 'dining', 'groceries', 'jajan', 'kopi'],\n  transport: ['transport', 'transportasi', 'bensin', 'ojek', 'parkir', 'kendaraan'],\n  shopping: ['shopping', 'belanja', 'fashion', 'pakaian', 'baju', 'gadget', 'elektronik'],\n  bills: ['bills', 'bill', 'tagihan', 'utilities', 'cicilan', 'listrik', 'internet'],\n  health_and_fitness: ['health', 'kesehatan', 'fitness', 'gym', 'olahraga', 'sport', 'sports'],\n  entertainment: ['entertainment', 'hiburan', 'hobi', 'hobby', 'game', 'games', 'leisure'],\n  education: ['education', 'pendidikan', 'belajar', 'kursus', 'buku', 'sekolah'],\n  personal_care: ['personal care', 'perawatan', 'skincare', 'beauty', 'salon'],\n  home: ['home', 'rumah', 'kost', 'kos', 'sewa', 'household'],\n  travel: ['travel', 'liburan', 'wisata', 'trip', 'jalan-jalan'],\n  subscriptions: ['subscription', 'subscriptions', 'langganan', 'subs'],\n  gifts_and_donations: ['gift', 'gifts', 'hadiah', 'donasi', 'donation', 'sedekah', 'zakat'],\n  pets: ['pets', 'pet', 'hewan', 'kucing', 'anjing']\n};\nfunction resolveCategory(type, v) {\n  const s = clean(v);\n  if (!s) return null;\n  if (TYPE_ALIAS[String(type || '').trim().toLowerCase()] !== 'expenses') return s.toLowerCase();   // income categories stay free text\n  const own = findBudget(s);\n  if (own) return own;                                                  // already the name of one of the user's budgets\n  const k = s.toLowerCase().replace(/\\s*[&/]\\s*/g, '_').replace(/[\\s-]+/g, '_');   // \"Health & Fitness\" -> health_and_fitness\n  const key = KEY_ALIAS[k] || k;\n  const words = KEY_BUDGET_WORDS[key];\n  if (words) {\n    const hit = budgetNames.find(n => words.includes(n.toLowerCase()) || n.toLowerCase().split(/[^a-z0-9]+/).some(w => words.includes(w)));\n    if (hit) return hit;                                               // key -> the user's budget for that key\n  }\n  return key;                                                          // no matching budget: the database rejects it and the reply says how to fix\n}\n\n// A budget the user chose themselves, e.g. \"beli member gym 800rb pakai bca kategori entertainment\"\n// or \"... masuk ke budget food\". Only these phrases count; the word \"budget\" alone does not\n// (so \"buat budget gym 300rb\" in the same message is not mistaken for a category).\nfunction explicitBudget(msg) {\n  const m = msg.match(/\\b(?:kategori|category)\\s+(?:nya\\s+)?([a-z0-9&_-]+(?:\\s+[a-z0-9&_-]+)?)/i)\n         || msg.match(/\\b(?:masuk(?:\\s+ke)?|ke)\\s+budget\\s+([a-z0-9&_-]+(?:\\s+[a-z0-9&_-]+)?)/i);\n  if (!m) return null;\n  const tail = m[1].trim().toLowerCase();\n  const hit = budgetNames.filter(n => tail === n.toLowerCase() || tail.startsWith(n.toLowerCase() + ' '))\n                         .sort((x, y) => y.length - x.length)[0];\n  return hit || tail.split(' ')[0];\n}\nconst explicit = explicitBudget(userMsg);\n\n// Relative dates (\"kemarin\", \"2 hari lalu\", \"yesterday\") are resolved here from today's date (Asia/Jakarta),\n// because the parser is told never to guess dates. Only used when the parser returned no date.\nfunction relativeDate(msg) {\n  const hits = [];\n  if (/\\b(kemarin lusa|kemarin dulu|2 hari (?:yang )?lalu|day before yesterday)\\b/.test(msg)) hits.push(2);\n  else if (/\\b(kemarin|kemaren|kmrn|yesterday)\\b/.test(msg)) hits.push(1);\n  for (const m of msg.matchAll(/\\b(\\d{1,2})\\s*(hari|days?)\\s*(?:yang\\s*)?(?:lalu|ago)\\b/g)) hits.push(Number(m[1]));\n  // numbers written as words, Indonesian and English\n  const WORDS = { dua: 2, tiga: 3, empat: 4, lima: 5, enam: 6, tujuh: 7, delapan: 8, sembilan: 9, sepuluh: 10,\n                  one: 1, a: 1, an: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };\n  const W = Object.keys(WORDS).join('|');\n  for (const m of msg.matchAll(new RegExp(`\\\\b(${W})\\\\s+(?:hari|days?)\\\\s+(?:yang\\\\s+)?(?:lalu|ago)\\\\b`, 'g'))) hits.push(WORDS[m[1]]);\n  for (const m of msg.matchAll(new RegExp(`\\\\b(${W}|\\\\d{1,2})\\\\s+(?:minggu|weeks?)\\\\s+(?:yang\\\\s+)?(?:lalu|ago)\\\\b`, 'g'))) hits.push((WORDS[m[1]] || Number(m[1])) * 7);\n  for (const m of msg.matchAll(/\\b(\\d{1,2})\\s*(hari|days?)\\s*(?:yang\\s*)?(?:lalu|ago)\\b/g)) hits.push(Number(m[1]));\n  if (/\\bseminggu (?:yang )?lalu\\b/.test(msg)) hits.push(7);\n  const days = [...new Set(hits)];\n  if (days.length !== 1 || days[0] < 1 || days[0] > 62) return null;   // none, or several different ones: do not guess\n  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());   // YYYY-MM-DD\n  const d = new Date(`${today}T00:00:00Z`);\n  d.setUTCDate(d.getUTCDate() - days[0]);\n  return d.toISOString().slice(0, 10);\n}\nconst relDate = relativeDate(userMsg);\n\n// Telegram update_id: the same message re-delivered gets the same key -> not recorded twice\nconst trg = $('Telegram Trigger').first().json;\nconst updateId = trg.update_id ?? trg.message?.message_id ?? Date.now();\n\nlet raw = readText($input.first().json).trim().replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\nlet list = [];\ntry {\n  const parsed = JSON.parse(raw);\n  list = Array.isArray(parsed) ? parsed : (parsed.transactions || []);\n} catch (e) { list = []; }\nif (!Array.isArray(list)) list = [];\n\nif (list.length === 0) {\n  return [{ json: { type: null, amount: null, source_key: `${updateId}:0`, unreadable: true } }];\n}\n\n// Safety net: a setup clause such as \"buat budget healthcare 300rb\" is not an expense. Drop a parsed expense that has\n// no payment account, has the same amount as such a clause and shares its name.\nconst SETUP_CLAUSE = /(?:buat|bikin|create|tambah|ubah|ganti|set|naikkan|naikin|kurangi|turunkan)\\s+(?:budget|kategori|akun|account|savings|tabungan|rekening)\\s+([a-z0-9&_-]+(?:\\s+[a-z0-9&_-]+)?)\\s+(\\d[\\d.,]*\\s*(?:rb|ribu|k|jt|juta)?)/g;\nconst setupClauses = [...userMsg.matchAll(SETUP_CLAUSE)].map(m => ({ name: m[1].trim(), amount: toAmount(m[2].replace(/jt|juta/, '000000').replace(/rb|ribu|k/, '000')) }));\nconst looksLikeSetup = t => {\n  if ((TYPE_ALIAS[String(t.type || '').trim().toLowerCase()] !== 'expenses') || mentioned(clean(t.from_account))) return false;\n  const text = `${t.category || ''} ${t.notes || ''} ${t.merchant || ''}`.toLowerCase();\n  return setupClauses.some(s => s.amount === toAmount(t.amount) && s.name.split(' ').some(w => w.length >= 3 && text.includes(w)));\n};\nlist = list.filter(t => !looksLikeSetup(t));\nif (list.length === 0) return [];   // everything was a setup clause: nothing to record, and no error message either\n\nconst isIncome = t => TYPE_ALIAS[String(t.type || '').trim().toLowerCase()] === 'income';\nreturn list.slice(0, 10).map((t, i) => ({\n  json: {\n    type: TYPE_ALIAS[String(t.type || '').trim().toLowerCase()] || clean(t.type),\n    amount: toAmount(t.amount),\n    category: (TYPE_ALIAS[String(t.type || '').trim().toLowerCase()] === 'expenses' && explicit) ? explicit : resolveCategory(t.type, t.category) || (isIncome(t) ? 'other' : null),   // a category KEY from the parser's fixed list (food, health_and_fitness, ...)\n    merchant: clean(t.merchant),\n    location: clean(t.location),\n    from_account: mentioned(clean(t.from_account)),\n    to_account: mentioned(clean(t.to_account)),\n    savings_name: mentioned(clean(t.savings_name)),   // empty is OK: the database falls back to \"general\"\n    date: clean(t.date) || relDate,   // the parser's explicit date wins; otherwise \"kemarin\" etc.\n    notes: clean(t.notes),\n    explicit_tail: (TYPE_ALIAS[String(t.type || '').trim().toLowerCase()] === 'expenses') ? explicit : null,   // only used by the reply, to skip the \"(otomatis)\" label\n    category_is_default: isIncome(t) && !clean(t.category),   // income without a stated source\n    source_key: `${updateId}:${i}`\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        37472,
+        12432
+      ],
+      "id": "7a09746f-3345-4a49-9c63-4248c9b5e749",
+      "name": "Normalize Transactions"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT record_transaction($1::jsonb) AS result;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify($json)] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37760,
+        12432
+      ],
+      "id": "21ed707d-3c63-45d4-8ae6-b1de0205880b",
+      "name": "Record Transaction",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transaction Formatter: ONE Telegram message for all transactions.\n// All financial numbers come from database results.\n\nconst rp = n =>\n  (Number(n) < 0 ? '-' : '') +\n  'Rp' + new Intl.NumberFormat('id-ID').format(Math.abs(Number(n) || 0));\n\nconst BULAN = [\n  'Januari','Februari','Maret','April','Mei','Juni',\n  'Juli','Agustus','September','Oktober','November','Desember'\n];\n\nconst todayWib = new Date().toLocaleDateString('sv-SE', {\n  timeZone: 'Asia/Jakarta'\n});\n\nconst monthLabel = ms =>\n  ms.slice(0, 7) === todayWib.slice(0, 7)\n    ? 'bulan ini'\n    : `${BULAN[Number(ms.slice(5, 7)) - 1]} ${ms.slice(0, 4)}`;\n\nconst cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;\n\n// Bold for Telegram without needing a parse mode: letters and digits become Unicode \"sans-serif bold\".\nconst bold = s => String(s).replace(/[A-Za-z0-9]/g, ch => {\n  const c = ch.charCodeAt(0);\n  if (c >= 65 && c <= 90)  return String.fromCodePoint(0x1D5D4 + c - 65);   // A-Z\n  if (c >= 97 && c <= 122) return String.fromCodePoint(0x1D5EE + c - 97);   // a-z\n  return String.fromCodePoint(0x1D7EC + c - 48);                            // 0-9\n});\n\nconst TYPE_LABEL = {\n  expenses: 'Pengeluaran',\n  income: 'Pemasukan',\n  transfer: 'Transfer',\n  savings: 'Tabungan'\n};\n\nconst SEP = '━━━━━━━━━━━━━━';\n\n// what the user wrote, without a category phrase that could not be used\nconst rawMessage = String($('Data Input').first().json.message || '')\n  .replace(/\\s+(?:masuk\\s+ke\\s+|ke\\s+)?(?:kategori|category|budget)\\s+.*$/i, '').trim();\n\n// 800000 -> \"800rb\", 1500000 -> \"1500rb\", 2000000 -> \"2jt\" (rounded up to 100rb, only used as an example)\nconst short = n => {\n  const r = Math.ceil((Number(n) || 0) / 100000) * 100000;\n  return r % 1000000 === 0 ? `${r / 1000000}jt` : `${r / 1000}rb`;\n};\nconst help = [];   // example fixes for category problems\n// example text for \"sebutkan kategori\": the whole message when it holds one transaction, otherwise just that item\nconst exampleBase = inp => inputs.length > 1\n  ? `${inp.notes || 'transaksi'} ${short(inp.amount)}${inp.from_account ? ' pakai ' + inp.from_account : ''}`\n  : rawMessage;\n\nconst inputs = $('Normalize Transactions').all().map(i => i.json);\nconst results = $input.all().map(i => i.json);\n\nconst okBlocks = [];\nconst rejected = [];\nconst need = new Set();\n\nlet available = {\n  accounts: [],\n  budgets: [],\n  savings: []\n};\n\n// ==================== SUCCESS FORMATTER ====================\n\nfunction okBlock(r, idx) {\n  const L = [];\n\n  const dateNote = () => {\n    if (r.date_ignored) {\n      L.push('ℹ️ Tanggal tidak valid, menggunakan tanggal hari ini.');\n    } else if (r.date !== todayWib) {\n      L.push(`📅 ${r.date}`);\n    }\n  };\n\n  if (r.type === 'expenses') {\n    const b = r.budget;\n\n    L.push(bold('✅ PENGELUARAN DICATAT'));\n    const extra = [r.notes, r.merchant]\n      .filter(x => x && x.toLowerCase() !== String(r.category).toLowerCase())\n      .filter((x, i, a) => a.findIndex(y => y.toLowerCase() === x.toLowerCase()) === i);\n    L.push(`💸 ${bold(rp(r.amount))} · ${r.category}${extra.length ? ' · ' + extra.join(' · ') : ''}`);\n    L.push(`🏦 ${r.from.name}: ${rp(r.from.before)} → ${rp(r.from.after)}`);\n\n    L.push('');\n    // \"(otomatis)\" = the budget was picked by the system (keyword / AI category), not named by the user\n    const inp = inputs[idx] || {};\n    const auto = !inp.explicit_tail && b.category.toLowerCase() !== String(r.notes || '').toLowerCase();\n    L.push(`📊 Budget ${b.category}${auto ? ' (otomatis)' : ''}`);\n    L.push(`${rp(b.spent)} / ${rp(b.limit)}${b.percent != null ? ` (${b.percent}%)` : ''}`);\n    \n    if (b.remaining < 0) {\n      L.push(`🚨 Melebihi budget ${rp(-b.remaining)}`);\n    } else if (b.percent != null && b.percent >= 80) {\n      L.push(`⚠️ Sisa budget: ${rp(b.remaining)}`);\n    } else {\n      L.push(`Sisa budget: ${rp(b.remaining)}`);\n    }\n\n    dateNote();\n\n  } else if (r.type === 'income') {\n    L.push(bold('✅ PEMASUKAN DICATAT'));\n    L.push(`💰 ${bold('+' + rp(r.amount))} · ${cap(r.category)}`);\n    L.push(`🏦 ${r.to.name}: ${rp(r.to.before)} → ${rp(r.to.after)}`);\n\n    L.push('');\n    L.push(`📈 Pemasukan ${monthLabel(r.month_start)}: ${rp(r.month_income)}`);\n\n    if (r.prev_month_income > 0) {\n      L.push(`Bulan lalu: ${rp(r.prev_month_income)}`);\n    }\n\n    if (r.category_is_default) {\n      L.push(`ℹ️ Sumber pemasukan tidak disebut, jadi dicatat sebagai \"${String(r.category || 'other')}\". Sebutkan sumbernya (gaji, bonus, investasi, dll.) supaya kategorinya tepat.`);\n    }\n\n    dateNote();\n\n  } else if (r.type === 'transfer') {\n    L.push(bold('✅ TRANSFER DICATAT'));\n    L.push(`🔁 ${bold(rp(r.amount))}`);\n    L.push(`📤 ${r.from.name}: ${rp(r.from.before)} → ${rp(r.from.after)}`);\n    L.push(`📥 ${r.to.name}: ${rp(r.to.before)} → ${rp(r.to.after)}`);\n\n    dateNote();\n\n  } else if (r.type === 'savings') {\n    const s = r.savings;\n\n    L.push(bold('✅ TABUNGAN DICATAT'));\n    L.push(`🎯 ${bold(rp(r.amount))} → ${s.name}`);\n    L.push(`🏦 ${r.from.name}: ${rp(r.from.before)} → ${rp(r.from.after)}`);\n\n    L.push('');\n    L.push(`💰 Tabungan ${s.name}: ${rp(s.current)}${s.target ? ` / ${rp(s.target)}${s.percent != null ? ` (${s.percent}%)` : ''}` : ''}`);\n\n    if (s.target_date) {\n      L.push(`📅 Target: ${s.target_date}`);\n    }\n\n    L.push(`📈 Total ditabung ${monthLabel(r.month_start)}: ${rp(r.month_savings)}`);\n\n    if (r.savings_is_default) {\n      L.push('ℹ️ Nama tabungan tidak disebut, masuk ke \"general\".');\n    }\n\n    dateNote();\n  }\n\n  return L.join('\\n');\n}\n\n// ==================== REJECTION REASON ====================\n\nfunction reason(r, inp) {\n  const q = r.name ? `\"${r.name}\"` : '';\n\n  switch (r.reason) {\n    case 'bad_type':\n      return inp.unreadable\n        ? 'Pesan tidak terbaca sebagai transaksi. Contoh: \"makan 25rb pakai BCA\".'\n        : 'Jenis transaksi tidak dikenali.';\n\n    case 'bad_amount':\n      return 'Nominal tidak valid. Harus antara Rp1 dan Rp100.000.000.000 (100 miliar) per transaksi.';\n\n    case 'from_account_missing':\n      need.add('accounts');\n\n      return inp.type === 'expenses'\n        ? 'Akun pembayaran belum disebut. Contoh: \"makan 30rb pakai BCA\".'\n        : inp.type === 'savings'\n          ? 'Akun sumber belum disebut. Contoh: \"tabung 500rb dari BCA\".'\n          : 'Akun asal belum disebut. Contoh: \"transfer 100rb dari BCA ke OVO\".';\n\n    case 'to_account_missing':\n      need.add('accounts');\n\n      return inp.type === 'income'\n        ? 'Akun penerima belum disebut. Contoh: \"gaji masuk 10jt ke BCA\".'\n        : 'Akun tujuan belum disebut. Contoh: \"transfer 100rb ke OVO\".';\n\n    case 'from_account_not_found':\n    case 'to_account_not_found':\n      need.add('accounts');\n      return `Akun ${q} tidak ditemukan.`;\n\n    case 'same_account':\n      return `Akun asal dan tujuan sama (${r.name}).`;\n\n    case 'category_budget_missing':\n      need.add('budgets');\n      help.push({ create: `buat budget ${r.suggest} ${short(inp.amount)}`, base: exampleBase(inp) });\n      return `\"${r.subject}\" termasuk kategori ${r.label}, tapi budget-nya belum ada.`;\n\n    case 'category_unknown':\n      need.add('budgets');\n      help.push({ base: exampleBase(inp) });\n      return `Kategori untuk \"${r.name}\" belum bisa ditentukan.`;\n\n    case 'explicit_budget_not_found':\n      need.add('budgets');\n      help.push({ create: `buat budget ${r.name} ${short(inp.amount)}`, base: exampleBase(inp) });\n      return `Budget \"${r.name}\" belum ada.`;\n\n    case 'budget_not_found': {\n      need.add('budgets');\n      if (!r.name || r.name === '(tanpa kategori)') {\n        help.push({ base: exampleBase(inp) });\n        return 'Kategori belum bisa ditentukan.';\n      }\n      const nice = String(r.name).replace(/_/g, ' ');\n      help.push({ create: `buat budget ${nice} ${short(inp.amount)}`, base: exampleBase(inp) });\n      return `Belum ada budget untuk \"${nice}\".`;\n    }\n\n    case 'savings_not_found':\n      need.add('savings');\n      return `Tabungan ${q} tidak ditemukan.`;\n\n    case 'insufficient_funds':\n      return `Saldo ${r.name} (${rp(r.balance)}) tidak cukup untuk ${rp(r.amount)}.`;\n\n    default:\n      return 'Transaksi tidak dapat diproses.';\n  }\n}\n\n// ==================== PROCESS RESULTS ====================\n\nresults.forEach((row, i) => {\n  const inp = inputs[i] || {};\n  const r = row.result;\n\n  if (!r) {\n    rejected.push({\n      label: `${TYPE_LABEL[inp.type] || 'Transaksi'} ${inp.amount ? rp(inp.amount) : ''}`.trim(),\n      text: 'Terjadi kesalahan sistem. Transaksi tidak tercatat.'\n    });\n    return;\n  }\n\n  if (r.status === 'duplicate') return;\n\n  if (r.status === 'ok') {\n    okBlocks.push(okBlock(r, i));\n    return;\n  }\n\n  if (r.available) available = r.available;\n\n  const label = inp.unreadable\n    ? 'Pesan'\n    : `${TYPE_LABEL[inp.type] || 'Transaksi'}${inp.amount > 0 ? ' ' + rp(inp.amount) : ''}`;\n\n  rejected.push({\n    label,\n    text: reason(r, inp)\n  });\n});\n\n// ==================== FINAL TELEGRAM MESSAGE ====================\n\nconst parts = [...okBlocks];\n\nif (rejected.length) {\n  const lines = [];\n\n  lines.push(\n    rejected.length === 1\n      ? bold('⚠️ TRANSAKSI TIDAK DICATAT')\n      : bold(`⚠️ ${rejected.length} TRANSAKSI TIDAK DICATAT`)\n  );\n\n  rejected.forEach((x, i) => {\n    lines.push(\n      rejected.length === 1\n        ? `${x.label}\\n${x.text}`\n        : `${i + 1}. ${x.label}\\n   ${x.text}`\n    );\n  });\n\n  if (help.length) {\n    const create = help.find(h => h.create);\n    const pick = `\"${help[0].base} kategori ${(available.budgets && available.budgets[0]) || 'food'}\"`;\n    lines.push('');\n    if (create) {\n      lines.push('Pilih salah satu:');\n      lines.push(`1) Buat budget: \"${create.create}\"`);\n      lines.push(`2) Atau sebutkan kategori yang ada: ${pick}`);\n    } else {\n      lines.push(`Sebutkan kategori yang ada: ${pick}`);\n    }\n  }\n\n  const show = (key, title) => {\n    if (need.has(key)) {\n      lines.push(\n        `${title}: ${available[key].length\n          ? available[key].join(', ')\n          : '(belum ada)'}`\n      );\n    }\n  };\n\n  show('accounts', '🏦 Akun tersedia');\n  show('budgets', '📊 Budget tersedia');\n  show('savings', '🎯 Tabungan tersedia');\n\n  lines.push('');\n  lines.push('ℹ️ Saldo tidak berubah.');\n\n  parts.push(lines.join('\\n'));\n}\n\nif (parts.length === 0) return [];\n\nreturn [{\n  json: {\n    response: parts.join(`\\n\\n${SEP}\\n\\n`)\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        38048,
+        12432
+      ],
+      "id": "5a9b5386-7235-4b66-8352-11f980f976ec",
+      "name": "Transaction Formatter"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "=You are a financial analytics intent classifier.\n\nClassify the user's message into exactly ONE of the following intents:\n\n- get_all_data: User explicitly requests all financial data or a complete financial summary.\n- balance: User asks about account balances or total remaining money.\n- unallocated: User asks about unallocated or unused money.\n- savings_priority: User asks which savings goal to prioritize.\n- savings: User asks about savings progress, targets, or deadlines.\n- budget: User asks about budget limits, spending, or remaining budget.\n- analytics: User asks for general financial insights, comparisons, or recommendations.\n- unmatched: The message is unrelated to financial analytics.\n\nRules:\n- Classify based on the user's actual question.\n- Do not confuse a general financial question with a request for all data.\n- \"Get all data\", \"cek semua data\", and \"tampilkan seluruh keuangan\" map to get_all_data.\n- get_all_data ONLY when the user wants everything (no single topic named). If the message names one topic, use that topic: \"tampilkan semua savings\" -> savings, \"tampilkan semua budget\" -> budget, \"lihat semua akun\" -> balance.\n- Questions about prioritizing savings map to savings_priority.\n- Return exactly one intent.\n- Return ONLY valid JSON. No markdown or explanations.\n\nOutput format:\n{\n  \"insight_type\": \"balance\"\n}"
+            },
+            {
+              "content": "={{ $('Data Input').item.json.message }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        36320,
+        15680
+      ],
+      "id": "36179ba3-e707-4da4-ace7-dab975a17d89",
+      "name": "AI Insight Intent",
+      "credentials": {
+        "openAiApi": {
+          "id": "par9BHbBzTQ7a8BV",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.output?.[0]?.content?.[0]?.text;\n\nif (!raw) {\n  return {\n    json: {\n      insight_type: \"analytics\"\n    }\n  };\n}\n\ntry {\n  const parsed = JSON.parse(raw);\n\n  const allowedIntents = [\n    \"get_all_data\",\n    \"balance\",\n    \"unallocated\",\n    \"savings_priority\",\n    \"savings\",\n    \"budget\",\n    \"analytics\",\n    \"unmatched\"\n  ];\n\n  const insightType = allowedIntents.includes(parsed.insight_type)\n    ? parsed.insight_type\n    : \"analytics\";\n\n  // \"tampilkan semua savings\" is NOT \"show all my data\": when the message names one topic, that topic wins.\n  const msg = String($('Data Input').item.json.message || '').toLowerCase();\n  const WHOLE = /(semua|seluruh|all|cek)\\s+(data|keuangan|finance)|get all|ringkasan|rangkuman|summary/;\n  let finalType = insightType;\n  if (insightType === 'get_all_data' && !WHOLE.test(msg)) {\n    if (/saving|tabungan|nabung/.test(msg)) finalType = 'savings';\n    else if (/budget|anggaran/.test(msg)) finalType = 'budget';\n    else if (/dialokasikan|unallocated/.test(msg)) finalType = 'unallocated';\n    else if (/saldo|akun|rekening|balance/.test(msg)) finalType = 'balance';\n  } else if (insightType === 'get_all_data' && /\\b(saving|tabungan)\\b/.test(msg) && !/(semua|seluruh|all|cek)\\s+(data|keuangan|finance)|get all|ringkasan|rangkuman|summary/.test(msg)) {\n    finalType = 'savings';\n  }\n  return {\n    json: {\n      insight_type: finalType\n    }\n  };\n\n} catch (error) {\n  return {\n    json: {\n      insight_type: \"analytics\"\n    }\n  };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        36672,
+        15680
+      ],
+      "id": "d4a77a2e-9387-47c1-b2ca-2c85f3ac1b81",
+      "name": "Extract Insight Intent"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Financial Insight Response: turns the AI's JSON answer into a Telegram message in the same style as the other\n// replies (Unicode bold, emoji, separators), plus a calculation breakdown for \"uang yang belum dialokasikan\".\n// All numbers come from Compute Facts; the AI only chooses the words.\nconst intent = $('Extract Insight Intent').first().json.insight_type;\nconst raw = ($input.first().json.output?.[0]?.content?.[0]?.text || '').trim();\nconst f = $('Compute Facts').first().json.facts || {};\n\nconst rp = n => (Number(n) < 0 ? '-' : '') + 'Rp' + new Intl.NumberFormat('id-ID').format(Math.abs(Number(n) || 0));\nconst bold = s => String(s).replace(/[A-Za-z0-9]/g, ch => {\n  const c = ch.charCodeAt(0);\n  if (c >= 65 && c <= 90)  return String.fromCodePoint(0x1D5D4 + c - 65);\n  if (c >= 97 && c <= 122) return String.fromCodePoint(0x1D5EE + c - 97);\n  return String.fromCodePoint(0x1D7EC + c - 48);\n});\nconst SEP = '━━━━━━━━━━━━━━';\n\n// If the model slips and writes markdown, convert it instead of showing raw symbols.\nconst md = s => String(s == null ? '' : s)\n  .replace(/^\\s*#{1,6}\\s*(.+)$/gm, (_, t) => bold(t.trim()))\n  .replace(/\\*\\*(.+?)\\*\\*/g, (_, t) => bold(t))\n  .replace(/(^|[\\s(])\\*([^*\\n]+)\\*(?=[\\s).,:;!?]|$)/g, (_, p, t) => p + bold(t))\n  .replace(/`/g, '')\n  .trim();\n\nlet ai = null;\ntry { ai = JSON.parse(raw.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '')); } catch (e) { ai = null; }\n\nlet message;\nif (ai && typeof ai === 'object' && (ai.answer || ai.title)) {\n  const L = [];\n  L.push(`${ai.emoji || '📊'} ${bold(String(ai.title || 'INSIGHT').toUpperCase())}`);\n  L.push('');\n  if (ai.answer) L.push(md(ai.answer));\n  const points = Array.isArray(ai.points) ? ai.points.filter(Boolean).slice(0, 6) : [];\n  if (points.length) { L.push(''); points.forEach(p => L.push(`• ${md(p)}`)); }\n  const recs = (Array.isArray(ai.recommendations) ? ai.recommendations : [ai.recommendation]).filter(Boolean).slice(0, 3);\n  if (recs.length === 1) L.push('', SEP, '', `💡 ${bold('Rekomendasi')}: ${md(recs[0])}`);\n  else if (recs.length > 1) { L.push('', SEP, '', `💡 ${bold('Rekomendasi')}:`); recs.forEach((r, i) => L.push(`${i + 1}) ${md(r)}`)); }\n  message = L.join('\\n');\n} else {\n  message = md(raw);   // fallback: plain text answer\n}\n\n// Safety net: every Rp amount in the AI text must exist in the data (or in the user's own message).\n// Otherwise the model invented or mis-added a number: say so and show the verified figures.\nconst known = new Set();\nconst walk = v => { if (typeof v === 'number') known.add(Math.round(Math.abs(v))); else if (v && typeof v === 'object') Object.values(v).forEach(walk); };\nwalk(f);\nwalk($('Compute Facts').first().json.snapshot); walk($('Compute Facts').first().json.tx_all);\nString($('Data Input').first().json.message || '').replace(/\\d[\\d.]*/g, t => { known.add(Number(t.replace(/\\./g, ''))); return t; });\nconst aiText = JSON.stringify(ai || raw);\nconst unknown = [...new Set([...aiText.matchAll(/Rp\\s?(\\d{1,3}(?:\\.\\d{3})+|\\d+)/g)].map(m => Number(m[1].replace(/\\./g, ''))))].filter(n => n > 0 && !known.has(n));\nif (unknown.length && f.liquid_total !== undefined) {\n  message += `\\n\\n⚠️ ${bold('Periksa angka')}: ${unknown.map(rp).join(', ')} tidak ditemukan di datamu, bisa jadi keliru. Angka terverifikasi: uang di tangan ${rp(f.liquid_total)}, belum dialokasikan ${rp(f.unallocated_money)}.`;\n}\n\nconst msgLow = String($('Data Input').first().json.message || '').toLowerCase();\nconst wantsList = /rincik|rinci(?:an)?\\s+(?:setiap|semua|transaksi|pemasukan|pengeluaran)|daftar|riwayat|histori|history|(?:setiap|semua|seluruh)\\s+(?:pemasukan|pengeluaran|transaksi)|detail\\s+(?:transaksi|pemasukan|pengeluaran)|transaksi apa saja/.test(msgLow);\nconst wantsBreakdown = !wantsList && /rincian|perhitungan|hitungan|menghitung|breakdown|cara.*hitung/.test(msgLow);\n\n// ---- transaction list: printed by the app from the database rows, never typed by the AI ----\nif (wantsList) {\n  const all = $('Compute Facts').first().json.tx_all || [];\n  const [y, mo] = String(f.month || '').split('-').map(Number);\n  const wantPrev = /bulan lalu|bulan kemarin|last month/.test(msgLow);\n  const pm = wantPrev ? (mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`) : f.month;\n  const BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];\n  const BULAN_FULL = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\n  const label = `${BULAN_FULL[Number(pm.slice(5, 7)) - 1]} ${pm.slice(0, 4)}`;\n  let rows = all.filter(t => String(t.date).slice(0, 7) === pm);\n\n  // narrow down when the question names a type, a budget or an account\n  const only = [];\n  if (/pemasukan|income/.test(msgLow)) only.push('income');\n  if (/pengeluaran|expense|belanja/.test(msgLow)) only.push('expenses');\n  if (/transfer/.test(msgLow)) only.push('transfer');\n  if (/tabungan|savings|nabung/.test(msgLow)) only.push('savings');\n  if (only.length) rows = rows.filter(t => only.includes(t.type));\n  const named = (f.budgets || []).map(b => b.category).filter(c => msgLow.includes(String(c).toLowerCase()));\n  if (named.length) rows = rows.filter(t => t.type !== 'expenses' || named.some(c => String(t.category).toLowerCase() === c.toLowerCase()));\n  const accs = (f.liquid_accounts || []).concat(f.debt_accounts || []).map(a => a.name).filter(n => msgLow.includes(String(n).toLowerCase()));\n  if (accs.length) rows = rows.filter(t => accs.some(n => [t.from_account, t.to_account].map(x => String(x || '').toLowerCase()).includes(n.toLowerCase())));\n\n  const dd = d => `${Number(d.slice(8, 10))} ${BULAN[Number(d.slice(5, 7)) - 1]}`;\n  const line = t => {\n    const what = [t.category, t.notes, t.merchant].filter(Boolean).filter((x, i, a) => a.findIndex(z => String(z).toLowerCase() === String(x).toLowerCase()) === i).join(' · ') || '-';\n    const acc = t.type === 'income' ? `→ ${t.to_account || '-'}`\n              : t.type === 'transfer' ? `${t.from_account || '-'} → ${t.to_account || '-'}`\n              : t.type === 'savings' ? `${t.from_account || '-'} → ${t.savings || 'general'}`\n              : (t.from_account || '-');\n    return `• ${dd(t.date)} · ${what} · ${bold(rp(t.amount))} · ${acc}`;\n  };\n  const SECTIONS = [['income', '💰 Pemasukan'], ['expenses', '💸 Pengeluaran'], ['transfer', '🔁 Transfer'], ['savings', '🎯 Tabungan']];\n  const out = [bold(`📒 RINCIAN TRANSAKSI ${label.toUpperCase()}`)];\n  SECTIONS.forEach(([type, title]) => {\n    const list = rows.filter(t => t.type === type);\n    if (!list.length) return;\n    const total = list.reduce((s, t) => s + Number(t.amount || 0), 0);\n    out.push('', `${bold(title)} (${list.length}) · total ${bold(rp(total))}`);\n    list.slice(0, 25).forEach(t => out.push(line(t)));\n    if (list.length > 25) out.push(`… dan ${list.length - 25} transaksi lain`);\n  });\n  if (!rows.length) out.push('', 'Belum ada transaksi yang cocok.');\n  const inc = rows.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);\n  const exp = rows.filter(t => t.type === 'expenses').reduce((s, t) => s + Number(t.amount || 0), 0);\n  if (inc && exp) out.push('', `Selisih pemasukan − pengeluaran: ${bold(rp(inc - exp))}`);\n  return [{ json: { response: [message, SEP, out.join('\\n')].filter(Boolean).join('\\n\\n') } }];\n}\n\nif (!(intent === 'unallocated' || wantsBreakdown) || !f.budgets) return [{ json: { response: message } }];\nconst L = [bold('🧮 RINCIAN HITUNGAN'), ''];\nL.push(`1) Uang di tangan (tanpa kartu kredit/pinjaman): ${rp(f.liquid_total)}`);\n(f.liquid_accounts || []).forEach(a => L.push(`   • ${a.name}: ${rp(a.balance)}`));\nL.push(`2) Sisa budget bulan ini (dicadangkan): ${rp(f.budget_remaining_total)}`);\nf.budgets.forEach(b => L.push(b.remaining < 0\n  ? `   • ${b.category}: melebihi ${rp(b.over_by)} (dihitung Rp0)`\n  : `   • ${b.category}: ${rp(b.limit)} − ${rp(b.spent)} = ${rp(b.remaining)}`));\nL.push(`${rp(f.liquid_total)} − ${rp(f.budget_remaining_total)} = ${bold(rp(f.unallocated_money))}`);\nif (f.budgets_over_limit_total > 0) L.push('ℹ️ Kelebihan budget sudah mengurangi saldo akun, jadi sudah terhitung.');\nreturn [{ json: { response: [message, SEP, L.join('\\n')].filter(Boolean).join('\\n\\n') } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        38048,
+        15680
+      ],
+      "id": "d8b41dd2-cb09-4d86-a66b-92bbfaf36a6f",
+      "name": "Financial Insight Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compute Facts: every number the AI may need, calculated here so the AI never does arithmetic.\n// The AI decides WHAT to say for the question asked; these facts decide the numbers.\nlet snap = $('Get Finance Snapshot').first().json.snapshot;\nif (typeof snap === 'string') { try { snap = JSON.parse(snap); } catch (e) { snap = null; } }\nif (!snap) return [{ json: { snapshot: null, facts: {} } }];\n\nlet txAll = $input.first().json.transactions;\nif (typeof txAll === 'string') { try { txAll = JSON.parse(txAll); } catch (e) { txAll = []; } }\ntxAll = Array.isArray(txAll) ? txAll : [];\nconst message = String($('Data Input').first().json.message || '').toLowerCase();\nconst num = v => Number(v) || 0;\nconst isDebt = t => ['credit_card', 'loan'].includes(t);\n\nconst accounts = snap.accounts || [];\nconst liquidTotal = accounts.filter(a => !isDebt(a.type)).reduce((s, a) => s + num(a.balance), 0);\nconst debtTotal = accounts.filter(a => isDebt(a.type)).reduce((s, a) => s + num(a.balance), 0);\n\nconst [Y, M, D] = String(snap.as_of).split('-').map(Number);\nconst daysInMonth = new Date(Y, M, 0).getDate();\n\nconst budgets = (snap.budgets || []).map(b => {\n  const limit = num(b.limit), spent = num(b.spent), remaining = limit - spent;\n  const projected = D >= 3 ? Math.round(spent / D * daysInMonth) : null;\n  return {\n    category: b.category, limit, spent, remaining,\n    percent_used: limit > 0 ? Math.round(spent * 1000 / limit) / 10 : null,\n    status: remaining < 0 ? 'over_limit' : (limit > 0 && spent / limit >= 0.8 ? 'almost_full' : 'ok'),\n    over_by: remaining < 0 ? -remaining : 0,\n    projected_end_of_month: projected,\n    projected_to_exceed: projected !== null && limit > 0 && remaining >= 0 && projected > limit\n  };\n});\nconst reserved = budgets.reduce((s, b) => s + Math.max(b.remaining, 0), 0);   // an overspent budget reserves 0\nconst unallocated = liquidTotal - reserved;\nconst totalOver = budgets.reduce((s, b) => s + b.over_by, 0);\n\n// an amount in the question (\"beli laptop 15jt\", \"kalau 500rb\") for what-if answers\nlet amount = null;\nconst m = message.match(/(\\d[\\d.,]*)\\s*(rb|ribu|k|jt|juta)\\b/) || message.match(/\\b(\\d{1,3}(?:[.,]\\d{3})+)\\b/);\nif (m) {\n  const base = parseFloat(String(m[1]).replace(/\\.(?=\\d{3}\\b)/g, '').replace(',', '.'));\n  const unit = m[2] || '';\n  amount = Math.round(base * (/^(jt|juta)$/.test(unit) ? 1e6 : /^(rb|ribu|k)$/.test(unit) ? 1e3 : 1));\n}\nconst what_if = amount ? {\n  amount,\n  liquid_after: liquidTotal - amount,\n  unallocated_after: unallocated - amount,\n  fits_in_unallocated: amount <= unallocated,\n  fits_in_liquid: amount <= liquidTotal,\n  shortfall_vs_unallocated: Math.max(amount - unallocated, 0),\n  shortfall_vs_liquid: Math.max(amount - liquidTotal, 0)\n} : null;\n\nconst facts = {\n  month: snap.month, as_of: snap.as_of, day_of_month: D, days_in_month: daysInMonth,\n  liquid_total: liquidTotal, debt_total: debtTotal,\n  liquid_accounts: accounts.filter(a => !isDebt(a.type)).map(a => ({ name: a.name, type: a.type, balance: num(a.balance) })),\n  debt_accounts: accounts.filter(a => isDebt(a.type)).map(a => ({ name: a.name, type: a.type, balance: num(a.balance) })),\n  glossary: {\n    'sisa uang / uang tersisa / saldo / uang di tangan': 'liquid_total',\n    'uang yang belum dialokasikan / uang bebas': 'unallocated_money (= liquid_total - budget_remaining_total)',\n    'sisa budget': 'budgets[].remaining (budget_remaining_total is their sum; an over-limit budget counts as 0)'\n  },\n  budgets, budgets_total_limit: budgets.reduce((s, b) => s + b.limit, 0), budgets_total_spent: budgets.reduce((s, b) => s + b.spent, 0),\n  budget_remaining_total: reserved,          // sum of what is still left in budgets that are not over their limit\n  budgets_over_limit_total: totalOver,\n  unallocated_money: unallocated,            // liquid_total - budget_remaining_total\n  unallocated_covers_all_overspend: unallocated >= totalOver,\n  unallocated_is_negative: unallocated < 0,\n  what_if,\n  other_budget: (budgets.find(b => /^(other|others|lainnya|lain-lain|misc)$/i.test(String(b.category).trim())) || {}).category || null   // a catch-all budget for one-off spending, if the user has one\n};\n// transactions of this month, summarised for the AI (the full list stays in tx_all for the app to print)\nconst thisMonth = txAll.filter(t => String(t.date).slice(0, 7) === snap.month);\nconst byCat = {};\nthisMonth.filter(t => t.type === 'expenses').forEach(t => { byCat[t.category || '-'] = (byCat[t.category || '-'] || 0) + num(t.amount); });\nfacts.spending_by_category_this_month = Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([category, total]) => ({ category, total }));\nfacts.transaction_count_this_month = thisMonth.length;\nfacts.this_month = snap.this_month; facts.last_month = snap.last_month;   // income / expenses / savings totals from the database\nfacts.largest_expenses_this_month = thisMonth.filter(t => t.type === 'expenses').sort((a, b) => num(b.amount) - num(a.amount)).slice(0, 5)\n  .map(t => ({ date: t.date, category: t.category, notes: t.notes, merchant: t.merchant, amount: num(t.amount), account: t.from_account }));\nfacts.recent_transactions = txAll.slice(0, 15).map(t => ({ date: t.date, type: t.type, amount: num(t.amount), category: t.category, notes: t.notes, merchant: t.merchant, from: t.from_account, to: t.to_account, savings: t.savings }));\nreturn [{ json: { snapshot: snap, facts, tx_all: txAll } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        37472,
+        15680
+      ],
+      "id": "2f738b99-e21e-4baf-ad59-15373666b174",
+      "name": "Compute Facts"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(json_agg(x), '[]'::json) AS transactions FROM (\n  SELECT t.transaction_id AS id,\n         to_char(COALESCE(t.transaction_date, t.created_at), 'YYYY-MM-DD') AS date,\n         t.transaction_type AS type, t.amount, t.category, t.merchant, t.notes,\n         fa.account_name AS from_account, ta.account_name AS to_account, s.savings_name AS savings\n    FROM transactions t\n    LEFT JOIN accounts fa ON fa.account_id = t.from_account_id\n    LEFT JOIN accounts ta ON ta.account_id = t.to_account_id\n    LEFT JOIN savings  s  ON s.savings_id  = t.savings_id\n   WHERE COALESCE(t.transaction_date, t.created_at) >= date_trunc('month', localtimestamp) - interval '1 month'\n   ORDER BY COALESCE(t.transaction_date, t.created_at) DESC, t.transaction_id DESC\n   LIMIT 200\n) x;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        37184,
+        15680
+      ],
+      "id": "967d671a-ffbe-4ce0-9a64-001efaa87550",
+      "name": "Get Transactions",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Prepare Log: one row per reply sent to the user. Nothing here changes the reply.\nconst g = name => { try { return $(name).first().json || {}; } catch (e) { return {}; } };\nconst trg = g('Telegram Trigger');\nconst intents = (g('Extract Intents').intents || []);\nconst reply = String($json.response || '');\n\nconst hasOk = /✅/.test(reply);\nconst hasWarn = /⚠️|🚨|TIDAK DICATAT|belum lengkap|tidak ditemukan|tidak valid|tidak ada yang berubah/i.test(reply);\nconst onlyInsight = intents.length > 0 && intents.every(i => i === 'financial_insight');\nconst status = onlyInsight ? 'succeeded' : (hasOk && hasWarn ? 'mixed' : (hasWarn ? 'rejected' : 'succeeded'));\n\nreturn {\n  json: {\n    update_id: trg.update_id ?? null,\n    chat_id: trg.message?.from?.id ?? trg.message?.chat?.id ?? null,\n    message: String(g('Data Input').message || trg.message?.text || '').slice(0, 1000),\n    intents: intents.length ? intents : ['unmatched'],\n    status,\n    reply: reply.slice(0, 4000)\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        38496,
+        13920
+      ],
+      "id": "6d421727-2a0c-42b8-9655-02208313331b",
+      "name": "Prepare Log"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO activity_log (update_id, chat_id, message, intents, status, reply)\nSELECT NULLIF(j->>'update_id', '')::bigint,\n       NULLIF(j->>'chat_id', '')::bigint,\n       j->>'message',\n       ARRAY(SELECT jsonb_array_elements_text(j->'intents')),\n       j->>'status',\n       j->>'reply'\n  FROM (SELECT $1::jsonb AS j) s;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify($json)] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        38720,
+        13920
+      ],
+      "id": "6b8add34-b8e7-495f-832f-5e558f5c875c",
+      "name": "Log Activity",
+      "credentials": {
+        "postgres": {
+          "id": "QYqadiRvj0SBP7k6",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Parse Transaction": {
+      "main": [
+        [
+          {
+            "node": "Normalize Transactions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Intents": {
+      "main": [
+        [
+          {
+            "node": "Split Out Intents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Get All Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse Financial Setup",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Insight Intent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unmatched Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Intents": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Intent Router": {
+      "main": [
+        [
+          {
+            "node": "Extract Intents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Input": {
+      "main": [
+        [
+          {
+            "node": "AI Intent Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Budget Update Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Data Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Analytics": {
+      "main": [
+        [
+          {
+            "node": "Financial Insight Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Budget Formatter": {
+      "main": [
+        [
+          {
+            "node": "Budget Update Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Data": {
+      "main": [
+        [
+          {
+            "node": "Parse Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Financial Setup": {
+      "main": [
+        [
+          {
+            "node": "Extract Financial Setup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Financial Setup": {
+      "main": [
+        [
+          {
+            "node": "Merge Same-Object",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Entities": {
+      "main": [
+        [
+          {
+            "node": "Check Existence (B)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Existence (S)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Existence (A)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback Output (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Valid (B)": {
+      "main": [
+        [
+          {
+            "node": "Check Action Type (B)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Budget Category (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation (B)": {
+      "main": [
+        [
+          {
+            "node": "If Valid (B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Budget Category (S)": {
+      "main": [
+        [
+          {
+            "node": "Show Budget Category (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create (B)": {
+      "main": [
+        [
+          {
+            "node": "Merge (B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete (B)": {
+      "main": [
+        [
+          {
+            "node": "Merge (B)",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Check Action Type (B)": {
+      "main": [
+        [
+          {
+            "node": "Create (B)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Adjust (B)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update (B)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete (B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update (B)": {
+      "main": [
+        [
+          {
+            "node": "Merge (B)",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Check Existence (B)": {
+      "main": [
+        [
+          {
+            "node": "Check Validation (B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existence (S)": {
+      "main": [
+        [
+          {
+            "node": "Check Validation (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation (S)": {
+      "main": [
+        [
+          {
+            "node": "If Valid (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create (S)": {
+      "main": [
+        [
+          {
+            "node": "Merge (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Savings Formatter": {
+      "main": [
+        [
+          {
+            "node": "Savings Update Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Savings Update Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 6
+          }
+        ]
+      ]
+    },
+    "Update (S)": {
+      "main": [
+        [
+          {
+            "node": "Merge (S)",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Delete (S)": {
+      "main": [
+        [
+          {
+            "node": "Merge (S)",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Get Savings Name (S)": {
+      "main": [
+        [
+          {
+            "node": "Show Savings Name (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Savings Name (S)": {
+      "main": [
+        [
+          {
+            "node": "Invalid Action Warning (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Action Type (S)": {
+      "main": [
+        [
+          {
+            "node": "Create (S)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Adjust (S)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update (S)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adjust (S)": {
+      "main": [
+        [
+          {
+            "node": "Merge (S)",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge (S)": {
+      "main": [
+        [
+          {
+            "node": "Savings Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge All": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adjust (B)": {
+      "main": [
+        [
+          {
+            "node": "Merge (B)",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge (B)": {
+      "main": [
+        [
+          {
+            "node": "Budget Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existence (A)": {
+      "main": [
+        [
+          {
+            "node": "Check Validation (A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Valid (S)": {
+      "main": [
+        [
+          {
+            "node": "Check Action Type (S)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Savings Name (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation (A)": {
+      "main": [
+        [
+          {
+            "node": "If Valid (A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Valid (A)": {
+      "main": [
+        [
+          {
+            "node": "Check Action Type (A)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Account Name (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Action Type (A)": {
+      "main": [
+        [
+          {
+            "node": "Create (A)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Adjust (A)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update (A)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete (A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create (A)": {
+      "main": [
+        [
+          {
+            "node": "Merge (A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adjust (A)": {
+      "main": [
+        [
+          {
+            "node": "Merge (A)",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Update (A)": {
+      "main": [
+        [
+          {
+            "node": "Merge (A)",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Delete (A)": {
+      "main": [
+        [
+          {
+            "node": "Merge (A)",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge (A)": {
+      "main": [
+        [
+          {
+            "node": "Account Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Account Formatter": {
+      "main": [
+        [
+          {
+            "node": "Account Update Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Account Update Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 7
+          }
+        ]
+      ]
+    },
+    "Get Account Name (S)": {
+      "main": [
+        [
+          {
+            "node": "Show Account Name (S)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Account Name (S)": {
+      "main": [
+        [
+          {
+            "node": "Invalid Action Warning (A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Budget Category (S)": {
+      "main": [
+        [
+          {
+            "node": "Invalid Action Warning (B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Same-Object": {
+      "main": [
+        [
+          {
+            "node": "Check Entities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Transactions": {
+      "main": [
+        [
+          {
+            "node": "Record Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Transaction": {
+      "main": [
+        [
+          {
+            "node": "Transaction Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transaction Formatter": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Finance Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Get Transactions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Insight Intent": {
+      "main": [
+        [
+          {
+            "node": "Extract Insight Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Insight Intent": {
+      "main": [
+        [
+          {
+            "node": "Get Finance Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Financial Insight Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 8
+          }
+        ]
+      ]
+    },
+    "Compute Facts": {
+      "main": [
+        [
+          {
+            "node": "Generate Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Transactions": {
+      "main": [
+        [
+          {
+            "node": "Compute Facts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Log": {
+      "main": [
+        [
+          {
+            "node": "Log Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "4765e7df-f2e2-4620-a77b-7bf98dcdc257",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": ""
+  },
+  "nodeGroups": [],
+  "id": "SvTkw9BXairci1Cr",
+  "tags": []
+}
